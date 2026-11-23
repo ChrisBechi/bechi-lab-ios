@@ -16,8 +16,8 @@ jobs:
         run: |
           python3 - <<'PY'
           import hashlib, json, os, pathlib, urllib.request, zipfile
-          root='https://storage.googleapis.com/flutter_infra_release/flutter/'
-          with urllib.request.urlopen(root+'releases/releases_macos.json',timeout=30) as response:
+          root='https://storage.googleapis.com/flutter_infra_release/releases/'
+          with urllib.request.urlopen(root+'releases_macos.json',timeout=30) as response:
               releases=json.load(response)['releases']
           arch='arm64' if os.uname().machine=='arm64' else 'x64'
           release=next(r for r in releases if r['version']=='3.44.2' and r['channel']=='stable' and r.get('dart_sdk_arch','x64')==arch)
