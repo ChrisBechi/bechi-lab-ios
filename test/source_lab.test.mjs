@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import vm from 'node:vm';
+const source=await readFile(new URL('../assets/source_lab.js',import.meta.url),'utf8');
+const app='https://bechi-flix.137-131-229-110.sslip.io';
+async function fixture({origin='https://superflixapi.boats',path='/serie/71225/1/1',status=200,target='https://superflixapi.boats/player/redirect/issued',config={}}={}){
+ const timers=[],requests=[],opened=[],notices=[],episodes=[],navigations=[];
+ const window={flutter_inappwebview:{callHandler:async(_name,value)=>{notices.push(value);}},
+  ALL_EPISODES:{1:[{ID:11,epi_num:1},{ID:22,epi_num:2}]},API_URL_SOURCE:'/player/source',
+  fetchBootstrapOptions:(id,done)=>{episodes.push(id);done([{ID:1,type:2},{ID:2,type:1,can_download:true},{ID:3,type:1}]);},
+  requirePageTokenClient:()=> 'own-current-session',sfEdgeHeaders:token=>({'X-Page-Token':token}),
+  CSRF_TOKEN:'own-csrf',OWNER_CONTEXT_HOST:'bechi.example',openIframe:(...args)=>opened.push(args)};
+ window.top=window;
+ const context={window,location:{origin,pathname:path,replace:url=>navigations.push(url)},
+  document:{querySelectorAll:()=>[]},setInterval:callback=>{timers.push(callback);return timers.length;},clearInterval:()=>{},
+  setTimeout,clearTimeout,addEventListener:()=>{},URL,URLSearchParams,AbortSignal,
+  sessionStorage:{setItem:()=>{}},fetch:async(url,options)=>{requests.push({url,options});return Response.json({data:{video_url:target}},{status});}};
+ await vm.runInNewContext(`(${source})(${JSON.stringify({id:'superflix-telefonistas',season:1,episode:1,origin:app,query:'As Telefonistas',sourceType:'hosted_video',...config})})`,context);
+ return {timers,requests,opened,notices,episodes,navigations,context};
+}
+test('official challenge documents are left entirely to their own code',async()=>{
+ const f=await fixture({origin:'https://challenges.cloudflare.com',path:'/turnstile/'});
+ assert.equal(f.timers.length,0);assert.equal(f.requests.length,0);assert.equal(f.notices.length,0);
+});
+test('principal uses only the verified document own session and ignores download sources',async()=>{
+ const f=await fixture();await f.timers[1]();
+ assert.equal(f.requests.length,1);assert.equal(f.requests[0].options.credentials,'same-origin');
+ assert.equal(f.requests[0].options.body.get('video_id'),'3');assert.equal(f.opened.length,1);
+ assert.equal(f.requests[0].options.headers['X-Page-Token'],'own-current-session');
+ assert.equal(new Headers(f.requests[0].options.headers).has('Cookie'),false);
+});
+test('next episode uses the canonical requested episode instead of replaying the lab first episode',async()=>{
+ const f=await fixture({path:'/serie/71225/1/2'});await f.timers[1]();assert.deepEqual(f.episodes,[22]);
+});
+test('authorization denial and foreign player URLs remain manual without repeated source requests',async()=>{
+ for(const options of [{status:403},{target:'https://evil.invalid/player'}]){
+  const f=await fixture(options);await f.timers[1]();await f.timers[1]();
+  assert.equal(f.opened.length,0);assert.equal(f.requests.length,1);assert(f.notices.includes('manual'));
+ }
+});
+test('a different source title cannot use the selected episode session',async()=>{
+ const f=await fixture({path:'/serie/99999/1/1'});assert.equal(f.timers.length,1);assert.equal(f.requests.length,0);
+});
+test('magnet details stay available for selecting 1080p without a reload loop',async()=>{
+ const f=await fixture({origin:app,path:'/titulo/jogos-mortais-3',config:{id:'magnet',sourceType:'torrent'}});
+ assert.equal(f.timers.length,1);assert.equal(f.navigations.length,0);assert(f.notices.includes('magnet'));
+});
