@@ -46,3 +46,16 @@ test('magnet details stay available for selecting 1080p without a reload loop',a
  const f=await fixture({origin:app,path:'/titulo/jogos-mortais-3',config:{id:'magnet',sourceType:'torrent'}});
  assert.equal(f.timers.length,1);assert.equal(f.navigations.length,0);assert(f.notices.includes('magnet'));
 });
+test('catalogue selection uses the public title slug and the selected season source, never another provider',async()=>{
+ const f=await fixture({origin:app,path:'/',config:{id:'mediafire',sourceType:'mediafire',season:2,episode:1}});
+ const calls=[],stream='212c4514-8d41-4ed5-b2b4-c152bc74bd53';
+ f.context.fetch=async url=>{
+  calls.push(url);
+  if(url.startsWith('/api/v1/search?'))return Response.json({data:{items:[{id:'title-uuid',slug:'meu-nome-e-farah',name:'Meu Nome é Farah'}]}});
+  if(url==='/api/v1/titles/meu-nome-e-farah')return Response.json({data:{id:'title-uuid',slug:'meu-nome-e-farah',kind:'series'}});
+  if(url==='/api/v1/titles/title-uuid/seasons')return Response.json({data:[{season_number:2,episodes:[{episode_number:1,streams:[{id:'wrong-provider',source_type:'google_drive'},{id:stream,source_type:'mediafire'}]}]}]});
+  throw Error('Unexpected catalogue path');
+ };
+ await f.timers[1]();assert.equal(calls[1],'/api/v1/titles/meu-nome-e-farah');
+ assert.deepEqual(f.navigations,['/assistir/'+stream]);
+});

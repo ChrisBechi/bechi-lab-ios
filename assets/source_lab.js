@@ -66,7 +66,7 @@ async function bechiSourceLab(config) {
       const titles = (search.items || []).filter(title => !config.year || title.release_year === config.year)
         .sort((a, b) => Number(normalize(b.name) === normalize(config.query)) - Number(normalize(a.name) === normalize(config.query)));
       for (const result of titles.slice(0, 4)) {
-        const title = await api('titles/' + result.id);
+        const title = await api('titles/' + encodeURIComponent(result.slug));
         if (config.sourceType === 'torrent') {clearInterval(open); notify('magnet'); location.replace('/titulo/' + title.slug); return;}
         let streams = title.streams || [];
         if (title.kind === 'series') {
