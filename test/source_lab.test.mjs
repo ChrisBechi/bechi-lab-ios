@@ -59,3 +59,9 @@ test('catalogue selection uses the public title slug and the selected season sou
  await f.timers[1]();assert.equal(calls[1],'/api/v1/titles/meu-nome-e-farah');
  assert.deepEqual(f.navigations,['/assistir/'+stream]);
 });
+test('the Archive example opens its canonical title even when a collection hides it from the first search page',async()=>{
+ const f=await fixture({origin:app,path:'/',config:{id:'archive',sourceType:'archive_org',slug:'scooby-doo-2002',year:2002}});
+ const stream='4859b4e5-bef8-4559-a5bb-61f11957ae16',calls=[];
+ f.context.fetch=async url=>{calls.push(url);assert.equal(url,'/api/v1/titles/scooby-doo-2002');return Response.json({data:{id:'title-uuid',slug:'scooby-doo-2002',kind:'movie',streams:[{id:stream,source_type:'archive_org'}]}});};
+ await f.timers[1]();assert.equal(calls.length,1);assert.deepEqual(f.navigations,['/assistir/'+stream]);
+});

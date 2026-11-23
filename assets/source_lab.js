@@ -62,7 +62,8 @@ async function bechiSourceLab(config) {
     if (running) return; running = true;
     try {
       notify('search');
-      const search = await api('search?q=' + encodeURIComponent(config.query) + '&limit=12');
+      const search = config.slug ? {items: [{slug: config.slug, release_year: config.year, name: config.query}]}
+        : await api('search?q=' + encodeURIComponent(config.query) + '&limit=12');
       const titles = (search.items || []).filter(title => !config.year || title.release_year === config.year)
         .sort((a, b) => Number(normalize(b.name) === normalize(config.query)) - Number(normalize(a.name) === normalize(config.query)));
       for (const result of titles.slice(0, 4)) {

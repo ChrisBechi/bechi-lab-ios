@@ -10,11 +10,12 @@ class SourceCase {
     this.episode = 1,
     this.year,
     this.liveId,
+    this.slug,
   });
   final String id, name, example, sourceType;
   final int season, episode;
   final int? year;
-  final String? liveId;
+  final String? liveId, slug;
   Uri get initialUrl => Uri.parse(
     liveId == null
         ? bechiOrigin
@@ -29,6 +30,7 @@ class SourceCase {
     'episode': episode,
     'year': year,
     'liveId': liveId,
+    'slug': slug,
     'origin': bechiOrigin,
   };
 }
@@ -78,6 +80,7 @@ const sourceCases = [
     'Scooby-Doo',
     'archive_org',
     year: 2002,
+    slug: 'scooby-doo-2002',
   ),
   SourceCase('animes', 'Animes Digital', 'Naruto Shippuden', 'animesdigital'),
   SourceCase('southpark', 'South Park oficial', 'South Park', 'southpark'),
