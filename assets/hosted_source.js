@@ -4,6 +4,7 @@
   'use strict';
   const players = new Set(['xn--tckasiu6cvova0eb5fua2449g98vg.best', 'xn--80adalaab0boiodbce7addhh.delivery']);
   const doc = crypto.getRandomValues(new Uint32Array(4)).join('-');
+  const providerAddresses = new Map();
   let target = window.__bechiHostedTarget, busy = false, prepared = '', sent = '', human = false, failed = false;
   const normalize = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   function post(type, extra = {}) {
@@ -18,6 +19,15 @@
   function allowedMedia(value) {
     try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port; } catch { return false; }
   }
+  window.addEventListener?.('message', event => {
+    // Observe the widget's real request for interaction. Never click it or
+    // handle its response token; validation remains in the official document.
+    if (event.origin !== 'https://challenges.cloudflare.com' ||
+        event.data?.source !== 'cloudflare-challenge' || event.data?.event !== 'interactiveBegin' ||
+        !event.source || event.source === window ||
+        !rootPage() && !playerPage() || human) return;
+    human = true; post('human');
+  });
   function protect() {
     if (!rootPage() && !playerPage()) return;
     window.open = () => null;
@@ -85,19 +95,20 @@
     // Use the provider's public ad API. No episode seeking or forged ad grant.
     if (typeof p.skipAdBreak === 'function') setTimeout(() => { try { p.skipAdBreak(); } catch {} }, 0);
     const variants = rows.map(v => {
-      // Provider-only fragment metadata stays in its document. Fetch transports
-      // the network URL without a fragment, just as the source player does.
+      // Provider-only fragment metadata stays in this document. The native
+      // transport sees an address; reads retain the provider's original input.
       const media = new URL(v.file); media.hash = '';
+      providerAddresses.set(media.href, v.file);
       return {url: media.href, height: Number.parseInt(v.label) || 0, label: v.label || 'Automática', type: v.type || (media.pathname.includes('.m3u8') ? 'hls' : 'mp4')};
     }).sort((a, b) => b.height - a.height);
     sent = target.epoch; post('ready', {url: variants[0].url, variants, title: name, format: target.kind === 'c7' || variants[0].type === 'mp4' ? 'mp4' : 'hls'});
   }
-  window.__bechiConfigureHosted = next => { target = window.__bechiHostedTarget = next; prepared = sent = ''; busy = false; human = false; failed = false; void inspect(); };
+  window.__bechiConfigureHosted = next => { target = window.__bechiHostedTarget = next; prepared = sent = ''; providerAddresses.clear(); busy = false; human = false; failed = false; void inspect(); };
   window.__bechiReadHosted = async (url, range) => {
     if (!playerPage() || !allowedMedia(url) || sent !== target.epoch || range && !/^bytes=\d+-\d*$/.test(range)) throw Error('SOURCE_READ');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
     try {
-      const response = await fetch(url, {credentials: 'same-origin', redirect: 'error', headers: range ? {Range: range} : {}, signal: controller.signal});
+      const response = await fetch(providerAddresses.get(url) || url, {credentials: 'same-origin', redirect: 'error', headers: range ? {Range: range} : {}, signal: controller.signal});
       if (![200, 206, 416].includes(response.status)) return {status: response.status};
       const reader = response.body?.getReader(), chunks = []; let length = 0;
       if (reader) try { for (;;) { const part = await reader.read(); if (part.done) break; if ((length += part.value.length) > 16777216) throw Error('SOURCE_SIZE'); chunks.push(part.value); } } finally { await reader.cancel(); }

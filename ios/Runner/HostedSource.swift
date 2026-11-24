@@ -139,6 +139,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     let root = canonical == target["root"] as? String || canonical == target["url"] as? String
     let player = target["kind"] as? String == "c7" && root || players.contains(host) && url.path.range(of: "^/video/[a-f0-9]{32}$", options: .regularExpression) != nil
     guard root || player else { return }
+    if type == "human" { showVerification(); return }
     if let key = data["document"] as? String, key.count < 100 { frames[key] = message.frameInfo }
     if type == "validated" {
       dismissVerification(); channel?.invokeMethod("phase", arguments: ["epoch": epoch, "phase": "episode"])
