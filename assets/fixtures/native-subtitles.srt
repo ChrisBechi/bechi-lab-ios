@@ -1,0 +1,7 @@
+1
+00:00:00,100 --> 00:00:08,000
+Teste de legenda nativa em português
+
+2
+00:00:08,100 --> 00:00:19,500
+A legenda continuou após o avanço

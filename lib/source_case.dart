@@ -6,93 +6,121 @@ class SourceCase {
     this.name,
     this.example,
     this.sourceType, {
+    this.slug,
     this.season = 1,
     this.episode = 1,
-    this.year,
     this.liveId,
-    this.slug,
+    this.asset,
   });
   final String id, name, example, sourceType;
+  final String? slug, liveId, asset;
   final int season, episode;
-  final int? year;
-  final String? liveId, slug;
-  Uri? get verificationUrl => switch (id) {
-    'superflix-telefonistas' => Uri.parse(
-      'https://superflixapi.boats/serie/71225/$season/$episode',
-    ),
-    'superflix-sereias' => Uri.parse(
-      'https://superflixapi.boats/serie/246992/$season/$episode',
-    ),
-    _ => null,
-  };
-  Uri get initialUrl => Uri.parse(
-    liveId == null
-        ? bechiOrigin
-        : '$bechiOrigin/ao-vivo/canal/$liveId/assistir',
-  );
-  Map<String, Object?> get configuration => {
-    'id': id,
-    'name': name,
-    'query': example,
-    'sourceType': sourceType,
-    'season': season,
-    'episode': episode,
-    'year': year,
-    'liveId': liveId,
-    'slug': slug,
-    'origin': bechiOrigin,
-  };
+  bool get isLive => liveId != null;
 }
 
+const codecCases = [
+  SourceCase(
+    'codec-hevc',
+    'Teste nativo · HEVC / EAC3 / legendas',
+    'Vídeo sintético local com duas faixas de áudio',
+    'fixture',
+    asset: 'assets/fixtures/native-hevc-eac3.mkv',
+  ),
+  SourceCase(
+    'codec-mp4',
+    'Teste nativo · MP4 / AAC',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-aac.mp4',
+  ),
+  SourceCase(
+    'codec-mkv',
+    'Teste nativo · MKV / AC3',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-ac3.mkv',
+  ),
+];
 const sourceCases = [
   SourceCase(
     'superflix-telefonistas',
     'SuperFlix · As Telefonistas',
     'As Telefonistas',
     'hosted_video',
+    slug: 'cable-girls',
   ),
   SourceCase(
     'superflix-sereias',
     'SuperFlix · Sereias',
     'Sereias',
     'hosted_video',
-    year: 2025,
+    slug: 'sereias-2025',
   ),
-  SourceCase('drive', 'Google Drive', 'Cyberchase', 'google_drive'),
-  SourceCase('terabox', 'TeraBox', 'Berlim e a Dama com Arminho', 'terabox'),
+  SourceCase(
+    'drive',
+    'Google Drive',
+    'Cyberchase',
+    'google_drive',
+    slug: 'cyberchase',
+  ),
+  SourceCase(
+    'terabox',
+    'TeraBox',
+    'Berlim e a Dama com Arminho',
+    'terabox',
+    slug: 'berlim-e-a-dama-com-arminho',
+  ),
   SourceCase(
     'rede-vod',
     'Rede Canais · séries',
     'Sereias',
     'redecanais',
-    year: 2025,
+    slug: 'sereias-2025',
   ),
   SourceCase(
     'mediafire',
     'MediaFire',
-    'Meu Nome é Farah',
+    'Meu Nome é Farah · T2 EP1',
     'mediafire',
+    slug: 'meu-nome-e-farah',
     season: 2,
   ),
-  SourceCase('nflix', 'NoveFlix', 'Sol da Minha Vida', 'web_video'),
-  SourceCase('c7', 'C7', 'Berlim', 'hosted_video', year: 2023),
+  SourceCase(
+    'nflix',
+    'NoveFlix',
+    'Sol da Minha Vida',
+    'web_video',
+    slug: 'sol-da-minha-vida',
+  ),
+  SourceCase('c7', 'C7', 'Berlim', 'hosted_video', slug: 'berlim'),
   SourceCase(
     'magnet',
     'Magnet · 1080p',
-    'Jogos Mortais',
+    'Jogos Mortais 3',
     'torrent',
-    year: 2006,
+    slug: 'jogos-mortais-3-2006',
   ),
   SourceCase(
     'archive',
     'Internet Archive',
     'Scooby-Doo',
     'archive_org',
-    year: 2002,
     slug: 'scooby-doo-2002',
   ),
-  SourceCase('animes', 'Animes Digital', 'Naruto Shippuden', 'animesdigital'),
-  SourceCase('southpark', 'South Park oficial', 'South Park', 'southpark'),
+  SourceCase(
+    'animes',
+    'Animes Digital',
+    'Naruto Shippuden',
+    'animesdigital',
+    slug: 'naruto-shippuden',
+  ),
+  SourceCase(
+    'southpark',
+    'South Park oficial',
+    'South Park',
+    'southpark',
+    slug: 'south-park-2006',
+  ),
   SourceCase(
     'embed-live',
     'EmbedTV · ao vivo',
@@ -115,54 +143,38 @@ const sourceCases = [
     liveId: 'superflix-sportv',
   ),
 ];
+Map<String, dynamic> jsonMap(dynamic value) =>
+    value is Map ? Map<String, dynamic>.from(value) : {};
+List<Map<String, dynamic>> jsonRows(dynamic value) => value is List
+    ? value.whereType<Map>().map((v) => Map<String, dynamic>.from(v)).toList()
+    : [];
+Map<String, dynamic>? selectSource(
+  SourceCase source,
+  List<Map<String, dynamic>> streams,
+) {
+  for (final stream in streams) {
+    if (stream['available'] == false ||
+        stream['source_type'] != source.sourceType) {
+      continue;
+    }
+    if (source.id == 'c7' && !'${stream['name']}'.startsWith('C7')) continue;
+    if (source.id.startsWith('superflix-') &&
+        stream['superflix_browser'] != true &&
+        !'${stream['name']}'.startsWith('SuperFlix')) {
+      continue;
+    }
+    if (stream['id'] is String) return stream;
+  }
+  return null;
+}
 
-/// Applies to document navigation; normal WebKit media protections remain active.
-bool allowedNavigation(Uri uri) {
-  if (uri.toString() == 'about:blank' || uri.toString() == 'about:srcdoc') {
-    return true;
-  }
-  if (uri.scheme != 'https' ||
-      uri.userInfo.isNotEmpty ||
-      (uri.hasPort && uri.port != 443)) {
-    return false;
-  }
-  if (uri.host == 'abyssplayer.com') {
-    return RegExp(r'^/[A-Za-z0-9]{8,20}$').hasMatch(uri.path) &&
-        !uri.hasQuery &&
-        !uri.hasFragment;
-  }
-  String decodedHost;
-  try {
-    decodedHost = Uri.decodeComponent(uri.host).toLowerCase();
-  } on FormatException {
-    return false;
-  }
-  final host = switch (decodedHost) {
-    '\u30b3\u30b3\u30fb\u30ec\u30b9\u30c8\u30e9\u30f3\u4e88\u7d04\u30bb\u30f3\u30bf\u30fc.best' =>
-      'xn--tckasiu6cvova0eb5fua2449g98vg.best',
-    '\u0441\u043e\u0432\u0435\u0442\u0441\u043a\u043e\u0435\u0441\u043e\u0435\u0432\u043e\u0435\u043c\u0430\u0441\u043b\u043e.delivery' =>
-      'xn--80adalaab0boiodbce7addhh.delivery',
-    final value => value,
-  };
-  const hosts = {
-    'bechi-flix.137-131-229-110.sslip.io',
-    'superflixapi.boats',
-    'challenges.cloudflare.com',
-    'xn--tckasiu6cvova0eb5fua2449g98vg.best',
-    'xn--80adalaab0boiodbce7addhh.delivery',
-    'rdcanais.org',
-    'caldodecana.fun',
-    'mastruzcomleite.site',
-    'embedcanaisdetv.xyz',
-    'playerembedcanais.site',
-    'embedtv.my',
-    'embedtv.cc',
-    'ebtv.lat',
-  };
-  return hosts.contains(host) ||
-      [
-        'embedtv.cc',
-        'ebtv.lat',
-        'playerembcanais.com',
-      ].any((domain) => host.endsWith('.$domain'));
+Map<String, dynamic>? selectMagnetOption(List<Map<String, dynamic>> options) {
+  final available = options.where((v) => v['available'] == true).toList();
+  int height(Map<String, dynamic> v) =>
+      int.tryParse(
+        RegExp(r'(\d{3,4})p').firstMatch('${v['label']}')?.group(1) ?? '',
+      ) ??
+      0;
+  available.sort((a, b) => height(b).compareTo(height(a)));
+  return available.isEmpty ? null : available.first;
 }

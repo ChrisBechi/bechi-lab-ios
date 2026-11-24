@@ -1,7 +1,7 @@
 name: bechi_player_prototype
-description: "Laboratório de reprodução Bechi Flix para iPhone."
+description: "Player nativo Bechi Flix com controles Flutter e codecs locais."
 publish_to: 'none'
-version: 0.1.1+2
+version: 0.2.0+3
 
 environment:
   sdk: ^3.12.2
@@ -9,9 +9,14 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_inappwebview: 6.1.5
+  flutter_secure_storage: ^11.2.0
+  media_kit: ^1.2.6
+  media_kit_libs_video: ^1.0.7
+  media_kit_video: ^2.0.1
 
 dev_dependencies:
+  integration_test:
+    sdk: flutter
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
@@ -19,4 +24,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/source_lab.js
+    - assets/fixtures/native-aac.mp4
+    - assets/fixtures/native-ac3.mkv
+    - assets/fixtures/native-hevc-eac3.mkv
+    - assets/certificates/cacert.pem
+    - THIRD_PARTY_NOTICES.txt

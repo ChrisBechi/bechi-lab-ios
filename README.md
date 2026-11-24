@@ -1,48 +1,40 @@
-# Bechi Lab · protótipo Flutter para iPhone
+# Bechi Native · iPhone 0.2.0
 
-Versão 0.1.1: libera o documento oficial Abyss/C7 e reconhece as duas formas
-(Unicode e ASCII) dos domínios internacionais usados pela SuperFlix. Se a origem
-responder com uma verificação, “Validar fonte” abre a página oficial no próprio
-app; conclua a confirmação e toque em “Voltar ao player”. A sessão permanece
-no armazenamento do mesmo app. O protótipo não resolve desafios humanos.
+Player com interface e controles próprios em Flutter. A decodificação usa
+libmpv/FFmpeg nativos pelo media_kit, com textura GPU. Sem WebView, iframe ou
+player web no aplicativo. O alvo é iOS ARM64, não o backend web do media_kit.
 
-Laboratório com 15 entradas para testar separadamente SuperFlix, Drive, TeraBox,
-Rede Canais, MediaFire, NoveFlix, C7, magnet, Archive, Animes Digital, South Park
-e três fontes ao vivo. A interface e o controle de navegação são Flutter/WKWebView;
-cada entrada usa o adaptador web correspondente do Bechi Flix. Este protótipo
-avalia a reprodução e o controle da WebView antes de uma migração dos codecs.
+As 15 entradas mantêm cada fonte separada. O app consulta o catálogo e os
+adaptadores normais do Bechi Flix e recebe mídia para o motor nativo. Não contém
+senhas ou chaves de servidor. Login usa a API normal e a sessão fica no Keychain.
+Cookies da sessão não são enviados para CDNs externas. TLS é verificado.
 
-Entre normalmente no Bechi Flix dentro do app. O app mantém os dados da sessão
-no armazenamento padrão do WebKit. Não contém senha, chave de servidor ou conta
-Apple. Se a rede bloquear a origem, use a conexão que já permitiu acessá-la.
+Controles: pausa, busca, ±10 segundos, episódios, qualidade, áudio e legendas.
+A rotação segue o aparelho. Ao sair, o app salva o progresso e libera somente
+a sessão encerrada. Uma fonte não é substituída silenciosamente por outra.
 
-Para SuperFlix, o script executado no documento da própria fonte tenta selecionar
-o servidor principal dublado pela sessão oficial. Ele não interage com desafios
-humanos, não forja cookies e preserva recusas de autorização. O teste de magnet
-abre os detalhes para selecionar Online → 1080p. Fontes ausentes no exemplo são
-informadas, sem escolher silenciosamente outra fonte.
-
-Novas janelas são recusadas pelo aplicativo. A navegação de documentos permite
-somente os domínios declarados em `lib/source_case.dart`. TLS e as proteções do
-WebKit permanecem normais. A captura de diagnóstico aceita somente estados
-predefinidos; URLs assinadas, cookies e mensagens de terceiros não são gravados.
-
-## Validar
+## Verificar
 
 ```sh
 flutter pub get --enforce-lockfile
 flutter analyze --fatal-infos
 flutter test
-node --test test/source_lab.test.mjs
+flutter test integration_test/native_player_test.dart -d <iPhone-simulator>
 ```
 
-## Gerar o IPA
+Os testes de lógica cobrem as fontes e as sessões. A integração decodifica
+MP4/H264/AAC, MKV/H264/AC3 e MKV/HEVC/EAC3 com duas faixas de áudio e legenda.
+Os vídeos são sintéticos, criados pelo projeto. Os testes verificam o motor
+real, pausa, busca, menus e retorno de rota. A disponibilidade e reprodução
+das fontes reais são registradas separadamente.
 
-O build Flutter iOS precisa de macOS/Xcode. O workflow manual
-`.github/workflows/ios-lab.yml` instala o SDK Flutter oficial com checksum,
-executa as verificações e compila um binário ARM64 de dispositivo real.
-Ele publica um prerelease com o IPA e seu SHA-256; não usa certificado Apple.
+## Gerar IPA
 
-O IPA produzido precisa ser reassinado no SideStore ou Sideloadly, como o app
-Contador. A abertura, imagem e áudio no iPhone serão confirmados na instalação
-física. A assinatura não é uma autorização de distribuição pela App Store.
+O workflow ios-lab.yml usa Flutter 3.44.2 com checksum e um Mac do GitHub.
+Executa análise, testes e simulador antes de empacotar ARM64. Confere Mpv e a
+ausência da antiga WebView. A publicação é manual; RELEASE_NOTES.md deve
+refletir os resultados reais antes de publicar.
+
+O IPA sem assinatura precisa ser reassinado no SideStore ou Sideloadly.
+A conferência física de imagem, áudio e desempenho é feita após instalar.
+Fontes das bibliotecas e avisos estão em THIRD_PARTY_NOTICES.txt.

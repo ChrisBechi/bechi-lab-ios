@@ -1,6 +1,11 @@
 name: Build iPhone prototype
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        type: boolean
+        default: false
+        description: Publish the verified native IPA
 permissions:
   contents: write
 concurrency:
@@ -9,7 +14,7 @@ concurrency:
 jobs:
   ios:
     runs-on: macos-15-intel
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,9 +42,17 @@ jobs:
           PY
       - run: flutter config --no-enable-swift-package-manager
       - run: flutter pub get --enforce-lockfile
-      - run: node --test test/source_lab.test.mjs
       - run: flutter analyze --fatal-infos
       - run: flutter test
+      - name: Start an available iPhone simulator
+        shell: bash
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,rows in d["devices"].items() if "iOS" in k for v in rows if v["isAvailable"] and "iPhone" in v["name"]))')
+          echo "BECHI_SIMULATOR=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
+      - name: Test real native decoding and Flutter controls on iPhone
+        run: flutter test integration_test/native_player_test.dart -d "$BECHI_SIMULATOR" --timeout 8m
       - name: Build device release without an Apple signing identity
         run: flutter build ios --release --no-codesign
       - name: Package IPA for SideStore re-signing
@@ -47,12 +60,22 @@ jobs:
           mkdir -p dist/Payload
           ditto build/ios/iphoneos/Runner.app dist/Payload/Runner.app
           cd dist
-          ditto -c -k --sequesterRsrc --keepParent Payload Bechi-Lab-0.1.1.ipa
-          shasum -a 256 Bechi-Lab-0.1.1.ipa > SHA256.txt
+          ditto -c -k --sequesterRsrc --keepParent Payload Bechi-Native-0.2.0.ipa
+          shasum -a 256 Bechi-Native-0.2.0.ipa > SHA256.txt
           test -f Payload/Runner.app/Frameworks/Flutter.framework/Flutter
+          test -f Payload/Runner.app/Frameworks/Mpv.framework/Mpv
+          test ! -e Payload/Runner.app/Frameworks/flutter_inappwebview_ios.framework
+          test ! -e Payload/Runner.app/Frameworks/App.framework/flutter_assets/assets/source_lab.js
           file Payload/Runner.app/Runner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bechi-Native-0.2.0
+          path: |
+            dist/Bechi-Native-0.2.0.ipa
+            dist/SHA256.txt
       - name: Publish test download
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "lab-${GITHUB_RUN_NUMBER}" dist/Bechi-Lab-0.1.1.ipa dist/SHA256.txt --prerelease --title 'Bechi Lab 0.1.1 · iPhone' --notes 'C7: domínio do player corrigido. SuperFlix: nomes internacionais de domínio e fluxo oficial de verificação no próprio app. IPA sem assinatura Apple para reassinatura no SideStore ou Sideloadly. Reprodução física depende da conferência no iPhone.'
+          gh release create "native-${GITHUB_RUN_NUMBER}" dist/Bechi-Native-0.2.0.ipa dist/SHA256.txt --prerelease --title 'Bechi Native 0.2.0 · iPhone' --notes-file RELEASE_NOTES.md
