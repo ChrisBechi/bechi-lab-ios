@@ -20,6 +20,13 @@ class SourceCase {
 
 const codecCases = [
   SourceCase(
+    'codec-avi',
+    'Teste nativo · AVI / Xvid / MP3',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-xvid-mp3.avi',
+  ),
+  SourceCase(
     'codec-hevc',
     'Teste nativo · HEVC / EAC3 / legendas',
     'Vídeo sintético local com duas faixas de áudio',
@@ -62,6 +69,14 @@ const sourceCases = [
     'Cyberchase',
     'google_drive',
     slug: 'cyberchase',
+  ),
+  SourceCase(
+    'drive-avi',
+    'Google Drive · AVI / Xvid / MP3',
+    'Super Shock · T1 EP10',
+    'google_drive',
+    slug: 'super-shock',
+    episode: 10,
   ),
   SourceCase(
     'terabox',

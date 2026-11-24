@@ -135,6 +135,7 @@ class BechiApi {
     String method = 'GET',
     Map<String, dynamic>? body,
     CancelScope? scope,
+    Duration timeout = const Duration(seconds: 60),
   }) async {
     scope?.check();
     if (path.startsWith('/') || path.contains('://') || path.contains('..')) {
@@ -155,14 +156,26 @@ class BechiApi {
     }
     final unbind = scope?.listen(() => request.abort());
     try {
-      final response = await request.close().timeout(
-        const Duration(seconds: 60),
-      );
+      final response = await request.close().timeout(timeout);
       for (final cookie in response.cookies) {
         if (cookie.name == 'cine_device' &&
             RegExp(r'^[A-Za-z0-9_-]{40,100}$').hasMatch(cookie.value)) {
           _cookie = cookie.value;
         }
+      }
+      if (method == 'HEAD') {
+        await response.drain<void>();
+        scope?.check();
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw ApiFailure(
+            'SOURCE_HEAD',
+            'A origem não liberou o vídeo. Tente novamente.',
+            status: response.statusCode,
+          );
+        }
+        return {
+          'data': {'ready': true},
+        };
       }
       final bytes = <int>[];
       await for (final chunk in response) {
@@ -249,6 +262,18 @@ class BechiApi {
     return envelope(
       '${uri.path.substring('/api/v1/'.length)}?${uri.query}',
       scope: scope,
+    );
+  }
+
+  Future<void> prepareMedia(Uri uri, {CancelScope? scope}) async {
+    if (uri.origin != bechiOrigin || !uri.path.startsWith('/api/v1/')) {
+      throw const ApiFailure('PATH', 'Endereço de preparação inválido.');
+    }
+    await envelope(
+      '${uri.path.substring('/api/v1/'.length)}?${uri.query}',
+      method: 'HEAD',
+      scope: scope,
+      timeout: const Duration(seconds: 150),
     );
   }
 

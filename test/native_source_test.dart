@@ -52,7 +52,7 @@ void main() {
   test(
     'source selector keeps all providers separate and chooses the largest magnet',
     () {
-      expect(sourceCases.map((s) => s.id).toSet(), hasLength(15));
+      expect(sourceCases.map((s) => s.id).toSet(), hasLength(16));
       final c7 = sourceCases.firstWhere((s) => s.id == 'c7'),
           sf = sourceCases.first;
       expect(
@@ -88,6 +88,11 @@ void main() {
           store: MemorySessionStore(),
           transport: (method, path, body, scope) async {
             calls.add('$method $path');
+            if (method == 'HEAD') {
+              return {
+                'data': {'ready': true},
+              };
+            }
             if (path == 'titles/${source.slug}') {
               return {
                 'data': {'id': titleId, 'kind': 'series'},
@@ -113,6 +118,7 @@ void main() {
               };
             }
             if (path.startsWith('me/progress/')) {
+              expect(method, 'PUT');
               writes.add(body!);
               return {
                 'data': {'ok': true},
@@ -131,7 +137,7 @@ void main() {
           await session.saveProgress();
           expect(writes.single['position_ms'], 60000);
           await session.open(streamId: nextId);
-          expect(calls, contains('GET playback/$nextId'));
+          expect(calls, contains('GET playback/$nextId?delivery=native'));
           expect(calls.where((s) => s.startsWith('GET titles/')), hasLength(2));
         } finally {
           await session.close();

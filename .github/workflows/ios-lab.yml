@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   ios:
-    runs-on: macos-15-intel
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -42,8 +42,11 @@ jobs:
           PY
       - run: flutter config --no-enable-swift-package-manager
       - run: flutter pub get --enforce-lockfile
+      - name: Record source provenance
+        run: python3 -c 'import json,os,pathlib; pathlib.Path("assets/build_info.json").write_text(json.dumps({"version":"0.2.0","commit":os.environ["GITHUB_SHA"],"run":os.environ["GITHUB_RUN_ID"]}))'
       - run: flutter analyze --fatal-infos
       - run: flutter test
+      - run: node --test test/hosted_source.test.mjs
       - name: Start an available iPhone simulator
         shell: bash
         run: |
@@ -52,7 +55,13 @@ jobs:
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
       - name: Test real native decoding and Flutter controls on iPhone
-        run: flutter test integration_test/native_player_test.dart -d "$BECHI_SIMULATOR" --timeout 8m
+        timeout-minutes: 17
+        run: python3 ci/native_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Native-test-diagnostics
+          path: native-diagnostics/
       - name: Build device release without an Apple signing identity
         run: flutter build ios --release --no-codesign
       - name: Package IPA for SideStore re-signing

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'hosted_source.dart';
 import 'bechi_api.dart';
 import 'source_case.dart';
 
@@ -38,6 +39,7 @@ class NativeSourceSession {
   String? _torrent, _stream, _titleId, _superflixPath, _superflixSession;
   Timer? _heartbeat, _deadline;
   String? _cacheLease;
+  HostedSource? _hosted;
   Uri? _original;
   final _leaseId = _uuid();
   bool _timedOut = false;
@@ -46,6 +48,7 @@ class NativeSourceSession {
   List<Map<String, dynamic>> seasons = [];
   Map<String, dynamic> title = {};
   NativePlayback? current;
+  String? get activeStreamId => _stream;
 
   Future<dynamic> _request(
     String path, {
@@ -103,7 +106,11 @@ class NativeSourceSession {
     if (source.sourceType == 'torrent') return _openTorrent();
     Map<String, dynamic>? stream;
     if (streamId != null) {
-      stream = {'id': streamId};
+      final allowed = seasons
+          .expand((s) => jsonRows(s['episodes']))
+          .map((e) => selectSource(source, jsonRows(e['streams'])))
+          .whereType<Map<String, dynamic>>();
+      stream = allowed.where((s) => s['id'] == streamId).firstOrNull;
     } else if (title['kind'] == 'series') {
       final season = seasons
           .where((v) => v['season_number'] == source.season)
@@ -127,7 +134,7 @@ class NativeSourceSession {
     for (;;) {
       try {
         _checkDeadline();
-        p = jsonMap(await _request('playback/$_stream'));
+        p = jsonMap(await _request('playback/$_stream?delivery=native'));
         break;
       } on ApiFailure catch (e) {
         if (e.code != 'MEDIA_PREPARING') rethrow;
@@ -135,14 +142,37 @@ class NativeSourceSession {
         await scope.delay(pollInterval);
       }
     }
-    final url = Uri.parse('${p['url']}');
+    var url = Uri.parse('${p['url']}');
+    if (url.host == 'abyssplayer.com' || url.host == 'superflixapi.boats') {
+      onStatus(
+        source.id == 'c7' ? 'Preparando o vídeo da C7…' : 'Analisando a fonte…',
+      );
+      _hosted ??= HostedSource(onStatus: onStatus);
+      final local = await _hosted!.prepare(
+        url: url.toString(),
+        kind: source.id == 'c7' ? 'c7' : 'superflix',
+        title: '${p['title_name'] ?? source.example}',
+        season: (p['season_number'] as num?)?.toInt() ?? source.season,
+        episode: (p['episode_number'] as num?)?.toInt() ?? source.episode,
+      );
+      p = {
+        ...p,
+        'url': local.url.toString(),
+        'variants': local.variants,
+        'source_height': local.height,
+      };
+      url = Uri.parse('${p['url']}');
+    }
     if (source.id.startsWith('superflix-') &&
         url.path.startsWith('/api/v1/superflix/start/')) {
       await _prepareSuperflix(url);
     }
-    if (url.host == 'abyssplayer.com' || url.host == 'superflixapi.boats') {
-      onStatus('Resolvendo a mídia para o player nativo…');
-      p = jsonMap(await _request('native/playback/$_stream'));
+    if (seasons.isNotEmpty) {
+      p = {...p, 'next_stream_id': nextStreamId(_stream!)};
+    }
+    if (source.id == 'nflix') {
+      onStatus('Preparando o vídeo na origem…');
+      await api.prepareMedia(Uri.parse('${p['url']}'), scope: scope);
     }
     current = _playback(p);
     _deadline?.cancel();
@@ -167,7 +197,7 @@ class NativeSourceSession {
     final raw = '${p['url'] ?? ''}';
     final url = Uri.tryParse(raw.startsWith('/') ? '$bechiOrigin$raw' : raw);
     if (url == null ||
-        url.scheme != 'https' ||
+        !acceptsMediaUri(url) ||
         url.userInfo.isNotEmpty ||
         url.hasFragment ||
         url.host == 'abyssplayer.com' ||
@@ -213,10 +243,11 @@ class NativeSourceSession {
       );
       if (state['ready'] == true) break;
       if (state['verificationFailed'] == true ||
+          state['needsAction'] == true ||
           jsonMap(state['mobile'])['needs_action'] == true) {
         throw const ApiFailure(
           'VERIFICATION',
-          'A origem solicitou validação. A reprodução nativa não reutiliza a página do player.',
+          'A origem solicitou uma confirmação humana. Atualize o aplicativo para usar a preparação nativa da fonte.',
         );
       }
       if ([
@@ -235,6 +266,14 @@ class NativeSourceSession {
 
   Future<NativePlayback> _openTorrent() async {
     onStatus('Conectando à fonte 1080p…');
+    final resume = title['completed'] == true
+        ? 0
+        : position.inMilliseconds > 0
+        ? position.inMilliseconds
+        : (title['position_ms'] as num?)?.toInt() ?? 0;
+    final total = duration.inMilliseconds > 0
+        ? duration.inMilliseconds
+        : (title['duration_ms'] as num?)?.toInt() ?? 0;
     final option = selectMagnetOption(jsonRows(title['source_options']));
     if (option == null) {
       throw const ApiFailure(
@@ -248,8 +287,8 @@ class NativeSourceSession {
         method: 'POST',
         body: {
           'source_option_id': option['id'],
-          'position_ms': 0,
-          'duration_ms': 0,
+          'position_ms': resume,
+          'duration_ms': total,
         },
       ),
     );
@@ -259,19 +298,29 @@ class NativeSourceSession {
       _checkDeadline();
       final state = jsonMap(await _request('torrent/sessions/$_torrent'));
       final files = jsonRows(state['files']);
+      files.sort(
+        (a, b) =>
+            ((b['bytes'] as num?) ?? 0).compareTo((a['bytes'] as num?) ?? 0),
+      );
       if (!selected && files.isNotEmpty && state['fileIndex'] == null) {
         await _request(
           'torrent/sessions/$_torrent/selection',
           method: 'POST',
           body: {
             'fileIndex': files.first['index'],
-            'position_ms': 0,
-            'duration_ms': 0,
+            'position_ms': resume,
+            'duration_ms': total,
           },
         );
         selected = true;
       }
       onStatus('Preparando o primeiro trecho · ${state['peers'] ?? 0} fontes');
+      if (['FAILED', 'ERROR', 'STOPPED', 'CLOSED'].contains(state['state'])) {
+        throw const ApiFailure(
+          'SOURCE_TORRENT',
+          'A fonte online não disponibilizou o vídeo. Tente novamente.',
+        );
+      }
       if (state['state'] == 'READY') {
         try {
           final playback = jsonMap(
@@ -357,7 +406,7 @@ class NativeSourceSession {
     try {
       await api.request(
         target,
-        method: 'POST',
+        method: 'PUT',
         body: {
           'position_ms': position.inMilliseconds.clamp(
             0,
@@ -378,8 +427,12 @@ class NativeSourceSession {
     _heartbeat?.cancel();
     _deadline?.cancel();
     scope.cancel();
-    await saveProgress();
-    await _releaseOwned();
+    await Future.wait([
+      saveProgress(),
+      _releaseOwned(),
+      if (_hosted != null) _hosted!.close(),
+    ]);
+    _hosted = null;
   }
 
   void _checkDeadline() {
@@ -436,7 +489,7 @@ class NativeSourceSession {
   Future<Uri> prepareQuality(String raw) async {
     final uri = Uri.tryParse(raw);
     if (uri == null ||
-        uri.scheme != 'https' ||
+        !acceptsMediaUri(uri) ||
         uri.userInfo.isNotEmpty ||
         uri.hasFragment) {
       throw const ApiFailure('NATIVE_SOURCE', 'Qualidade inválida.');
@@ -481,6 +534,20 @@ class NativeSourceSession {
       await heartbeat();
     }
     return uri;
+  }
+
+  bool acceptsMediaUri(Uri uri) =>
+      uri.scheme == 'https' || _hosted?.owns(uri) == true;
+  String? nextStreamId(String streamId) {
+    final available = seasons
+        .expand((s) => jsonRows(s['episodes']))
+        .map((e) => selectSource(source, jsonRows(e['streams'])))
+        .whereType<Map<String, dynamic>>()
+        .toList();
+    final index = available.indexWhere((s) => s['id'] == streamId);
+    return index >= 0 && index + 1 < available.length
+        ? '${available[index + 1]['id']}'
+        : null;
   }
 
   static String _uuid() {

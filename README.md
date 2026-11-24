@@ -1,10 +1,17 @@
 # Bechi Native · iPhone 0.2.0
 
 Player com interface e controles próprios em Flutter. A decodificação usa
-libmpv/FFmpeg nativos pelo media_kit, com textura GPU. Sem WebView, iframe ou
-player web no aplicativo. O alvo é iOS ARM64, não o backend web do media_kit.
+libmpv/FFmpeg nativos pelo media_kit, com textura GPU. O alvo é iOS ARM64.
 
-As 15 entradas mantêm cada fonte separada. O app consulta o catálogo e os
+SuperFlix e C7 possuem um adaptador WebKit privado para preparar a origem e
+entregar seus trechos ao motor nativo. Ele escolhe o principal e mantém a sessão
+na troca de episódio, como na TV. A confirmação oficial só é apresentada quando
+há uma caixa humana disponível. A pessoa toca na própria confirmação; não há
+solução automática nem fabricação de cookies. O player e os controles são Flutter.
+As outras fontes recebem a mídia diretamente dos adaptadores da API.
+
+As 16 entradas mantêm cada fonte separada. Super Shock T1 EP10 testa o AVI
+original com Xvid e MP3, além do caminho de Cyberchase. O app consulta o catálogo e os
 adaptadores normais do Bechi Flix e recebe mídia para o motor nativo. Não contém
 senhas ou chaves de servidor. Login usa a API normal e a sessão fica no Keychain.
 Cookies da sessão não são enviados para CDNs externas. TLS é verificado.
@@ -23,7 +30,7 @@ flutter test integration_test/native_player_test.dart -d <iPhone-simulator>
 ```
 
 Os testes de lógica cobrem as fontes e as sessões. A integração decodifica
-MP4/H264/AAC, MKV/H264/AC3 e MKV/HEVC/EAC3 com duas faixas de áudio e legenda.
+AVI/Xvid/MP3, MP4/H264/AAC, MKV/H264/AC3 e MKV/HEVC/EAC3 com duas faixas de áudio e legenda.
 Os vídeos são sintéticos, criados pelo projeto. Os testes verificam o motor
 real, pausa, busca, menus e retorno de rota. A disponibilidade e reprodução
 das fontes reais são registradas separadamente.
@@ -36,5 +43,6 @@ ausência da antiga WebView. A publicação é manual; RELEASE_NOTES.md deve
 refletir os resultados reais antes de publicar.
 
 O IPA sem assinatura precisa ser reassinado no SideStore ou Sideloadly.
+O arquivo build_info.json identifica o commit realmente compilado.
 A conferência física de imagem, áudio e desempenho é feita após instalar.
 Fontes das bibliotecas e avisos estão em THIRD_PARTY_NOTICES.txt.

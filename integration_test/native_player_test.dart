@@ -33,6 +33,18 @@ Future<void> until(
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  testWidgets('Keychain writes, restores and deletes the native session', (
+    tester,
+  ) async {
+    final store = NativeSessionStore();
+    try {
+      await store.write('a' * 43);
+      expect(await store.read(), 'a' * 43);
+    } finally {
+      await store.write(null);
+    }
+    expect(await store.read(), isNull);
+  });
   for (final source in codecCases) {
     testWidgets(
       '${source.id}: native texture, audio, pause, seek, menus and route cleanup',
@@ -148,9 +160,12 @@ void main() {
           'seek_back': true,
           'menus': true,
           'engine': 'native libmpv',
+          'first_frame_ms': key.currentState!.firstFrameMs,
         };
         await sub.cancel();
-        await key.currentState!.leave();
+        final leaving = key.currentState!.leave();
+        await until(tester, () => key.currentState == null);
+        await leaving;
         await tester.pumpAndSettle();
         expect(find.text('Abrir teste'), findsOneWidget);
         api.dispose();

@@ -53,17 +53,28 @@ class NativePlayerPageState extends State<NativePlayerPage> {
   int revision = 0;
   Timer? hideTimer, progressTimer;
   double? dragging;
+  final startup = Stopwatch();
+  int? firstFrameMs;
+  bool mediaLoaded = false;
   @override
   void initState() {
     super.initState();
     subscriptions.add(
       player.stream.position.listen((v) {
+        if (closing) return;
         session.position = v;
+        if (mediaLoaded &&
+            firstFrameMs == null &&
+            v.inMilliseconds > 0 &&
+            (player.state.width ?? 0) > 0) {
+          firstFrameMs = startup.elapsedMilliseconds;
+        }
         if (mounted) setState(() {});
       }),
     );
     subscriptions.add(
       player.stream.duration.listen((v) {
+        if (closing) return;
         session.duration = v;
         if (mounted) setState(() {});
       }),
@@ -131,6 +142,10 @@ class NativePlayerPageState extends State<NativePlayerPage> {
 
   Future<void> open({String? streamId}) async {
     final current = ++revision;
+    startup.reset();
+    startup.start();
+    firstFrameMs = null;
+    mediaLoaded = false;
     setState(() {
       error = null;
       busy = true;
@@ -145,6 +160,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
         Media(data.url, httpHeaders: data.headers, start: data.position),
         play: true,
       );
+      mediaLoaded = true;
       if (mounted && current == revision) setState(() => busy = false);
       scheduleHide();
     } catch (e) {
@@ -162,8 +178,12 @@ class NativePlayerPageState extends State<NativePlayerPage> {
   Future<void> openNext() async {
     final id = playback?.metadata['next_stream_id'];
     if (id is! String || busy) return;
-    await session.saveProgress();
-    await player.stop();
+    unawaited(session.saveProgress());
+    try {
+      await player.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      /* Disposal also releases the native engine. */
+    }
     await open(streamId: id);
   }
 
@@ -197,7 +217,12 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     revision++;
     session.scope.cancel();
     hideTimer?.cancel();
-    await player.stop();
+    unawaited(session.saveProgress());
+    try {
+      await player.stop().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      /* Disposal also releases the native engine. */
+    }
     await WidgetsBinding.instance.endOfFrame;
     if (mounted) Navigator.of(context).pop();
   }
@@ -211,8 +236,8 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     for (final subscription in subscriptions) {
       unawaited(subscription.cancel());
     }
-    unawaited(player.dispose());
     unawaited(session.close());
+    unawaited(player.dispose());
     super.dispose();
   }
 
@@ -256,7 +281,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     );
     if (picked == null || !mounted || closing) return;
     final u = Uri.tryParse('${picked['url']}');
-    if (u == null || u.scheme != 'https') return;
+    if (u == null || !session.acceptsMediaUri(u)) return;
     setState(() => busy = true);
     final position = player.state.position;
     try {
@@ -503,7 +528,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                                 Text(error!, textAlign: TextAlign.center),
                                 const SizedBox(height: 16),
                                 FilledButton(
-                                  onPressed: () => open(),
+                                  onPressed: () => open(
+                                    streamId: session.seasons.isNotEmpty
+                                        ? session.activeStreamId
+                                        : null,
+                                  ),
                                   child: const Text('Tentar novamente'),
                                 ),
                               ],
