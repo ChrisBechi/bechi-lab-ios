@@ -1,5 +1,11 @@
 # Bechi Lab · protótipo Flutter para iPhone
 
+Versão 0.1.1: libera o documento oficial Abyss/C7 e reconhece as duas formas
+(Unicode e ASCII) dos domínios internacionais usados pela SuperFlix. Se a origem
+responder com uma verificação, “Validar fonte” abre a página oficial no próprio
+app; conclua a confirmação e toque em “Voltar ao player”. A sessão permanece
+no armazenamento do mesmo app. O protótipo não resolve desafios humanos.
+
 Laboratório com 15 entradas para testar separadamente SuperFlix, Drive, TeraBox,
 Rede Canais, MediaFire, NoveFlix, C7, magnet, Archive, Animes Digital, South Park
 e três fontes ao vivo. A interface e o controle de navegação são Flutter/WKWebView;

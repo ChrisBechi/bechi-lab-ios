@@ -5,7 +5,7 @@ async function bechiSourceLab(config) {
   const isApp = location.origin === config.origin && window === window.top;
   const isProvider = location.origin === 'https://superflixapi.boats' &&
     /^\/serie\/[1-9][0-9]{0,8}(?:\/[1-9][0-9]?\/[1-9][0-9]{0,2})?$/.test(location.pathname) && config.id.startsWith('superflix-');
-  const isPlayer = ['https://xn--tckasiu6cvova0eb5fua2449g98vg.best', 'https://xn--80adalaab0boiodbce7addhh.delivery'].includes(location.origin);
+  const isPlayer = ['https://xn--tckasiu6cvova0eb5fua2449g98vg.best', 'https://xn--80adalaab0boiodbce7addhh.delivery', 'https://abyssplayer.com'].includes(location.origin);
   if (!isApp && !isProvider && !isPlayer) return;
   const watch = () => {
     for (const video of document.querySelectorAll('video')) {

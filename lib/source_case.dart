@@ -16,6 +16,15 @@ class SourceCase {
   final int season, episode;
   final int? year;
   final String? liveId, slug;
+  Uri? get verificationUrl => switch (id) {
+    'superflix-telefonistas' => Uri.parse(
+      'https://superflixapi.boats/serie/71225/$season/$episode',
+    ),
+    'superflix-sereias' => Uri.parse(
+      'https://superflixapi.boats/serie/246992/$season/$episode',
+    ),
+    _ => null,
+  };
   Uri get initialUrl => Uri.parse(
     liveId == null
         ? bechiOrigin
@@ -117,6 +126,24 @@ bool allowedNavigation(Uri uri) {
       (uri.hasPort && uri.port != 443)) {
     return false;
   }
+  if (uri.host == 'abyssplayer.com') {
+    return RegExp(r'^/[A-Za-z0-9]{8,20}$').hasMatch(uri.path) &&
+        !uri.hasQuery &&
+        !uri.hasFragment;
+  }
+  String decodedHost;
+  try {
+    decodedHost = Uri.decodeComponent(uri.host).toLowerCase();
+  } on FormatException {
+    return false;
+  }
+  final host = switch (decodedHost) {
+    '\u30b3\u30b3\u30fb\u30ec\u30b9\u30c8\u30e9\u30f3\u4e88\u7d04\u30bb\u30f3\u30bf\u30fc.best' =>
+      'xn--tckasiu6cvova0eb5fua2449g98vg.best',
+    '\u0441\u043e\u0432\u0435\u0442\u0441\u043a\u043e\u0435\u0441\u043e\u0435\u0432\u043e\u0435\u043c\u0430\u0441\u043b\u043e.delivery' =>
+      'xn--80adalaab0boiodbce7addhh.delivery',
+    final value => value,
+  };
   const hosts = {
     'bechi-flix.137-131-229-110.sslip.io',
     'superflixapi.boats',
@@ -132,10 +159,10 @@ bool allowedNavigation(Uri uri) {
     'embedtv.cc',
     'ebtv.lat',
   };
-  return hosts.contains(uri.host) ||
+  return hosts.contains(host) ||
       [
         'embedtv.cc',
         'ebtv.lat',
         'playerembcanais.com',
-      ].any((host) => uri.host.endsWith('.$host'));
+      ].any((domain) => host.endsWith('.$domain'));
 }

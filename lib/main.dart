@@ -30,7 +30,7 @@ class SourceList extends StatelessWidget {
   const SourceList({super.key});
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('BECHI FLIX · LAB')),
+    appBar: AppBar(title: const Text('BECHI FLIX · LAB 0.1.1')),
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -81,6 +81,8 @@ class _SourcePlayerState extends State<SourcePlayer> {
   InAppWebViewController? _controller;
   String _status = 'Abrindo…';
   int _blocked = 0;
+  bool _verificationNeeded = false, _validating = false;
+  Uri? _playbackUrl;
   late final Future<String> _script = rootBundle.loadString(
     'assets/source_lab.js',
   );
@@ -88,16 +90,56 @@ class _SourcePlayerState extends State<SourcePlayer> {
     if (mounted && value != _status) setState(() => _status = value);
   }
 
+  Future<void> verifySource() async {
+    final url = widget.source.verificationUrl;
+    if (url == null) return;
+    setState(() {
+      _validating = true;
+      _verificationNeeded = false;
+    });
+    status('Conclua a verificação oficial. Depois toque em Voltar ao player.');
+    await _controller?.loadUrl(
+      urlRequest: URLRequest(url: WebUri(url.toString())),
+    );
+  }
+
+  Future<void> returnToPlayer() async {
+    setState(() {
+      _validating = false;
+      _verificationNeeded = false;
+    });
+    status('Retornando ao player com a sessão desta fonte…');
+    await _controller?.loadUrl(
+      urlRequest: URLRequest(
+        url: WebUri((_playbackUrl ?? widget.source.initialUrl).toString()),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: Text(widget.source.name, style: const TextStyle(fontSize: 15)),
       actions: [
+        if (_validating)
+          TextButton(
+            onPressed: returnToPlayer,
+            child: const Text('Voltar ao player'),
+          ),
         IconButton(
           tooltip: 'Recarregar',
           icon: const Icon(Icons.refresh),
           onPressed: () => _controller?.reload(),
         ),
+        if (_verificationNeeded && !_validating)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: FilledButton.icon(
+              onPressed: verifySource,
+              icon: const Icon(Icons.verified_user_outlined),
+              label: const Text('Validar fonte'),
+            ),
+          ),
       ],
     ),
     body: Column(
@@ -155,6 +197,7 @@ class _SourcePlayerState extends State<SourcePlayer> {
                   mediaPlaybackRequiresUserGesture: false,
                   javaScriptCanOpenWindowsAutomatically: false,
                   supportMultipleWindows: true,
+                  sharedCookiesEnabled: true,
                   useShouldOverrideUrlLoading: true,
                   isInspectable: false,
                 ),
@@ -180,6 +223,12 @@ class _SourcePlayerState extends State<SourcePlayer> {
                               'A fonte não conseguiu reproduzir. Tente recarregar.',
                           'magnet':
                               'Escolha Online → 1080p no catálogo para testar o magnet.',
+                          'authorization':
+                              'A autorização deste título está vencida ou foi revogada no servidor.',
+                          'release':
+                              'A origem não concluiu a liberação do episódio.',
+                          'archive':
+                              'O servidor não conseguiu abrir o arquivo do Archive.',
                         };
                         final message = messages[args[0]];
                         if (message != null) status(message);
@@ -205,6 +254,27 @@ class _SourcePlayerState extends State<SourcePlayer> {
                   if (request.isForMainFrame == true) {
                     status(
                       'A página não abriu. Confira a conexão e recarregue.',
+                    );
+                  }
+                },
+                onLoadStop: (controller, url) {
+                  if (url == null) return;
+                  final address = Uri.parse(url.toString());
+                  if (address.origin == bechiOrigin &&
+                      RegExp(
+                        r'^/assistir/[a-f0-9-]{36}$',
+                      ).hasMatch(address.path)) {
+                    _playbackUrl = address;
+                  }
+                },
+                onReceivedHttpError: (controller, request, response) {
+                  final address = request.url;
+                  if (widget.source.verificationUrl != null &&
+                      address.host == 'superflixapi.boats' &&
+                      [403, 429].contains(response.statusCode)) {
+                    if (mounted) setState(() => _verificationNeeded = true);
+                    status(
+                      'A fonte pediu uma verificação. Toque em Validar fonte.',
                     );
                   }
                 },
