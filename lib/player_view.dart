@@ -150,6 +150,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
       error = null;
       busy = true;
       audioChosen = false;
+      quality = 'Automática';
     });
     try {
       final data = await session.open(streamId: streamId);
@@ -177,14 +178,22 @@ class NativePlayerPageState extends State<NativePlayerPage> {
 
   Future<void> openNext() async {
     final id = playback?.metadata['next_stream_id'];
-    if (id is! String || busy) return;
+    if (id is String) await changeEpisode(id);
+  }
+
+  Future<void> changeEpisode(String id) async {
+    if (busy || closing) return;
+    setState(() {
+      busy = true;
+      status = 'Preparando o episódio…';
+    });
     unawaited(session.saveProgress());
     try {
       await player.stop().timeout(const Duration(seconds: 2));
     } catch (_) {
       /* Disposal also releases the native engine. */
     }
-    await open(streamId: id);
+    if (mounted && !closing) await open(streamId: id);
   }
 
   Future<void> seek(Duration value) async {
@@ -414,9 +423,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
       ),
     );
     if (id != null && mounted) {
-      await session.saveProgress();
-      await player.stop();
-      await open(streamId: id);
+      await changeEpisode(id);
     }
   }
 

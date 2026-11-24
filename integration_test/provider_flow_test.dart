@@ -82,6 +82,14 @@ void main() {
             ),
             isNotEmpty,
           );
+          outcome.addAll({
+            'engine': 'native libmpv',
+            'first_frame_ms': state.firstFrameMs,
+            'width': player.state.width,
+            'height': player.state.height,
+            'audio_tracks': player.state.tracks.audio.length,
+            'stage': 'steady',
+          });
           final first = player.state.position;
           await tester.runAsync(
             () => Future<void>.delayed(const Duration(seconds: 12)),
@@ -102,6 +110,7 @@ void main() {
             lessThan(300),
           );
           await player.play();
+          outcome['stage'] = 'seek';
           if (!source.isLive) {
             await state.seek(const Duration(seconds: 30));
             await until(tester, () => player.state.position.inSeconds >= 28);
@@ -114,17 +123,46 @@ void main() {
             );
             await state.session.saveProgress();
           }
-          outcome = {
-            ...outcome,
+          outcome['stage'] = 'menus';
+          for (final menu in <String, Future<void> Function()>{
+            'Áudio': state.chooseAudio,
+            'Legendas': state.chooseSubtitle,
+            if (state.playback!.variants.isNotEmpty)
+              'Qualidade': state.chooseQuality,
+            if (state.session.seasons.isNotEmpty)
+              'Episódios': state.chooseEpisode,
+          }.entries) {
+            final showing = menu.value();
+            await until(
+              tester,
+              () => find.text(menu.key).evaluate().isNotEmpty,
+            );
+            expect(tester.takeException(), isNull);
+            Navigator.of(tester.element(find.text(menu.key).first)).pop();
+            await tester.pump(const Duration(milliseconds: 400));
+            await showing;
+          }
+          final next = state.playback!.metadata['next_stream_id'];
+          if (next is String) {
+            outcome['stage'] = 'next_episode';
+            await tester.runAsync(state.openNext);
+            await until(
+              tester,
+              () => state.error != null || state.firstFrameMs != null,
+              timeout: const Duration(minutes: 4),
+            );
+            expect(state.error, isNull);
+            expect(state.session.activeStreamId, next);
+            expect(player.state.playing, true);
+            outcome['next_episode_ms'] = state.firstFrameMs;
+          }
+          outcome.addAll({
             'passed': true,
-            'engine': 'native libmpv',
-            'first_frame_ms': state.firstFrameMs,
-            'width': player.state.width,
-            'height': player.state.height,
-            'audio_tracks': player.state.tracks.audio.length,
+            'stage': 'complete',
             'pause_resume': true,
             'seek': !source.isLive,
-          };
+            'menus': true,
+          });
         } catch (_) {
           // No media URLs, cookies, tokens or browser state in public diagnostics.
           outcome['error'] =
@@ -155,7 +193,7 @@ void main() {
         }
       },
       skip: !enabled,
-      timeout: const Timeout(Duration(minutes: 5)),
+      timeout: const Timeout(Duration(minutes: 10)),
     );
   }
 }
