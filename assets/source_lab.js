@@ -16,6 +16,29 @@ async function bechiSourceLab(config) {
   };
   const timer = setInterval(watch, 1200); watch();
   addEventListener('pagehide', () => clearInterval(timer), {once: true});
+  if (config.id === 'c7' && location.origin === 'https://abyssplayer.com') {
+    let qualityChosen = false, playing = false, attempts = 0;
+    const prepare = setInterval(() => {
+      if (++attempts > 40) {clearInterval(prepare); return;}
+      if (document.querySelector('.cf-turnstile,iframe[src*="challenges.cloudflare.com"]')) return;
+      if (!new RegExp('^Berlim T01_EP-' + String(config.episode).padStart(2, '0') + '_Dublado_').test(document.title)) return;
+      const container = document.querySelector('.jwplayer[id]');
+      if (!container || typeof window.jwplayer !== 'function') return;
+      try {
+        const player = window.jwplayer(container.id);
+        const levels = (player.getQualityLevels?.() || []).map((level, id) => ({id, height: Number(level.height) || Number(/(\d{3,4})p?/i.exec(level.label || '')?.[1]) || 0})).filter(level => level.height > 0);
+        if (!levels.length) return;
+        if (!qualityChosen) {
+          const preferred = levels.filter(level => level.height <= 1080).sort((a, b) => b.height - a.height)[0] || levels.sort((a, b) => b.height - a.height)[0];
+          if (player.getCurrentQuality?.() !== preferred.id) player.setCurrentQuality(preferred.id);
+          qualityChosen = true;
+        }
+        if (!playing) {player.play(true); playing = true; clearInterval(prepare);}
+      } catch {}
+    }, 1000);
+    addEventListener('pagehide', () => clearInterval(prepare), {once: true});
+    return;
+  }
   if (isProvider) {
     let started = false;
     const expected = config.id === 'superflix-sereias' ? '246992' : '71225';

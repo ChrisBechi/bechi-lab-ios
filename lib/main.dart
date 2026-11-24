@@ -273,9 +273,7 @@ class _SourcePlayerState extends State<SourcePlayer> {
                       address.host == 'superflixapi.boats' &&
                       [403, 429].contains(response.statusCode)) {
                     if (mounted) setState(() => _verificationNeeded = true);
-                    status(
-                      'A fonte pediu uma verificação. Toque em Validar fonte.',
-                    );
+                    status('A fonte recusou esta sessão. Tente Validar fonte.');
                   }
                 },
               );

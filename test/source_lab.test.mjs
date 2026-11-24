@@ -65,3 +65,23 @@ test('the Archive example opens its canonical title even when a collection hides
  f.context.fetch=async url=>{calls.push(url);assert.equal(url,'/api/v1/titles/scooby-doo-2002');return Response.json({data:{id:'title-uuid',slug:'scooby-doo-2002',kind:'movie',streams:[{id:stream,source_type:'archive_org'}]}});};
  await f.timers[1]();assert.equal(calls.length,1);assert.deepEqual(f.navigations,['/assistir/'+stream]);
 });
+
+test('C7 starts its own reviewed player in the highest available quality up to 1080p',async()=>{
+ const f=await fixture({origin:'https://abyssplayer.com',path:'/ValidPlayer12',config:{id:'c7',sourceType:'hosted_video'}});
+ const qualities=[],plays=[];
+ f.context.document.title='Berlim T01_EP-01_Dublado_1080p_example.mp4';
+ f.context.document.querySelector=selector=>selector==='.jwplayer[id]'?{id:'official-player'}:null;
+ f.context.window.jwplayer=()=>({getQualityLevels:()=>[{label:'360p'},{label:'1080p'},{label:'720p'}],getCurrentQuality:()=>0,setCurrentQuality:index=>qualities.push(index),play:value=>plays.push(value)});
+ await f.timers[1]();await f.timers[1]();
+ assert.deepEqual(qualities,[1]);assert.deepEqual(plays,[true]);assert.equal(f.requests.length,0);
+});
+
+test('C7 leaves verification widgets and a different episode untouched',async()=>{
+ for(const verification of [true,false]){
+  const f=await fixture({origin:'https://abyssplayer.com',path:'/ValidPlayer12',config:{id:'c7',sourceType:'hosted_video'}});
+  f.context.document.title=verification?'Berlim T01_EP-01_Dublado_example.mp4':'Berlim T01_EP-02_Dublado_example.mp4';
+  f.context.document.querySelector=()=>verification?{}:null;
+  f.context.window.jwplayer=()=>{throw Error('Must not touch this player');};
+  await f.timers[1]();assert.equal(f.requests.length,0);
+ }
+});
