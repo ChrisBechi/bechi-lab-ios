@@ -41,6 +41,9 @@ das fontes reais são registradas separadamente.
 ## Gerar IPA
 
 O workflow ios-lab.yml usa Flutter 3.44.2 com checksum e um Mac do GitHub.
+O ambiente temporário aplica a correção oficial flutter/flutter#193142 para
+aguardar o leitor de logs antes de iniciar o simulador. O patch e seu checksum
+ficam em ci; o Flutter engine do aplicativo permanece o da versão fixada.
 Executa análise, testes e simulador antes de empacotar ARM64. Confere Mpv e a
 ausência da antiga WebView. A publicação é manual; RELEASE_NOTES.md deve
 refletir os resultados reais antes de publicar.

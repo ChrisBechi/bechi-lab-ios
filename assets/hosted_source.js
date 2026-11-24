@@ -16,7 +16,7 @@
     return target?.kind === 'c7' && location.origin + location.pathname === target.url || target?.kind === 'superflix' && players.has(location.hostname) && /^\/video\/[a-f0-9]{32}$/.test(location.pathname);
   }
   function allowedMedia(value) {
-    try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port && !u.hash; } catch { return false; }
+    try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port; } catch { return false; }
   }
   function protect() {
     if (!rootPage() && !playerPage()) return;
@@ -84,7 +84,12 @@
     protect(); p.pause?.(true); p.setMute?.(true);
     // Use the provider's public ad API. No episode seeking or forged ad grant.
     if (typeof p.skipAdBreak === 'function') setTimeout(() => { try { p.skipAdBreak(); } catch {} }, 0);
-    const variants = rows.map(v => ({url: v.file, height: Number.parseInt(v.label) || 0, label: v.label || 'Automática', type: v.type || (v.file.includes('.m3u8') ? 'hls' : 'mp4')})).sort((a, b) => b.height - a.height);
+    const variants = rows.map(v => {
+      // Provider-only fragment metadata stays in its document. Fetch transports
+      // the network URL without a fragment, just as the source player does.
+      const media = new URL(v.file); media.hash = '';
+      return {url: media.href, height: Number.parseInt(v.label) || 0, label: v.label || 'Automática', type: v.type || (media.pathname.includes('.m3u8') ? 'hls' : 'mp4')};
+    }).sort((a, b) => b.height - a.height);
     sent = target.epoch; post('ready', {url: variants[0].url, variants, title: name, format: target.kind === 'c7' || variants[0].type === 'mp4' ? 'mp4' : 'hls'});
   }
   window.__bechiConfigureHosted = next => { target = window.__bechiHostedTarget = next; prepared = sent = ''; busy = false; human = false; failed = false; void inspect(); };

@@ -11,6 +11,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   private var timeout: DispatchWorkItem?
   private var verification: UINavigationController?
   private var channel: FlutterMethodChannel?
+  private var reusable = false
   private let origin = "https://bechi-flix.137-131-229-110.sslip.io"
   private let players = Set(["xn--tckasiu6cvova0eb5fua2449g98vg.best", "xn--80adalaab0boiodbce7addhh.delivery"])
 
@@ -40,7 +41,8 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       var config = args; config.removeValue(forKey: "script"); config["root"] = root; config["movie"] = movie
       if kind == "superflix" { config["season"] = movie ? 0 : Int(components[2])!; config["episode"] = movie ? 0 : Int(components[3])! }
       guard let data = try? JSONSerialization.data(withJSONObject: config), let json = String(data: data, encoding: .utf8) else { fail(result, "SOURCE_INPUT"); return }
-      let retainedFrame = target["root"] as? String == root ? framesForRoot(root) : nil
+      let retainedFrame = reusable && target["root"] as? String == root ? framesForRoot(root) : nil
+      reusable = false
       pending?(FlutterError(code: "SOURCE_REPLACED", message: "A solicitação da fonte mudou.", details: nil))
       pending = result; target = config; frames.removeAll(); timeout?.cancel()
       let work = DispatchWorkItem { [weak self] in self?.finishFailure("SOURCE_TIMEOUT") }
@@ -87,7 +89,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       pending?(FlutterError(code: "SOURCE_CLOSED", message: "Reprodução encerrada.", details: nil)); pending = nil
       dismissVerification(); web?.stopLoading(); web?.removeFromSuperview()
       web?.configuration.userContentController.removeScriptMessageHandler(forName: "bechiHosted")
-      web = nil; target = [:]; frames.removeAll(); result(nil)
+      web = nil; target = [:]; reusable = false; frames.removeAll(); result(nil)
     default: result(FlutterMethodNotImplemented)
     }
   }
@@ -125,7 +127,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     screen.dismiss(animated: false) { [weak self] in self?.attachHidden() }
   }
   private func fail(_ result: FlutterResult, _ code: String) { result(FlutterError(code: code, message: "A fonte não concluiu a preparação. Tente novamente.", details: nil)) }
-  private func finishFailure(_ code: String) { timeout?.cancel(); timeout = nil; dismissVerification(); guard let callback = pending else { return }; pending = nil; fail(callback, code) }
+  private func finishFailure(_ code: String) { reusable = false; timeout?.cancel(); timeout = nil; dismissVerification(); guard let callback = pending else { return }; pending = nil; fail(callback, code) }
 
   func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
     guard let data = message.body as? [String: Any], let epoch = data["epoch"] as? String, epoch == target["epoch"] as? String,
@@ -148,6 +150,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
           let variants = data["variants"] as? [[String: Any]], !variants.isEmpty, variants.count <= 12 else { return }
     timeout?.cancel(); timeout = nil; dismissVerification()
     guard let callback = pending else { return }; pending = nil
+    reusable = true
     callback(["frame": key, "url": value, "variants": variants, "format": data["format"] ?? "hls"])
   }
 

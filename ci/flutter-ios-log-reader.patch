@@ -1,0 +1,85 @@
+--- a/packages/flutter_tools/lib/src/ios/simulators.dart
++++ b/packages/flutter_tools/lib/src/ios/simulators.dart
+@@ -384,7 +384,7 @@
+   @override
+   bool supportsRuntimeMode(BuildMode buildMode) => buildMode == BuildMode.debug;
+ 
+-  final _logReaders = <IOSApp?, DeviceLogReader>{};
++  final _logReaders = <IOSApp?, _IOSSimulatorLogReader>{};
+   _IOSSimulatorDevicePortForwarder? _portForwarder;
+ 
+   @override
+@@ -477,13 +477,24 @@
+ 
+     ProtocolDiscovery? vmServiceDiscovery;
+     if (debuggingOptions.debuggingEnabled) {
++      final _IOSSimulatorLogReader logReader = getLogReader(app: package);
+       vmServiceDiscovery = ProtocolDiscovery.vmService(
+-        getLogReader(app: package),
++        logReader,
+         ipv6: debuggingOptions.ipv6,
+         hostPort: debuggingOptions.hostVmServicePort,
+         devicePort: debuggingOptions.deviceVmServicePort,
+         logger: globals.logger,
+       );
++      // Upstream flutter/flutter#193142: do not miss the startup VM URI.
++      const warningDelay = Duration(seconds: 30);
++      final timer = Timer(warningDelay, () {
++        globals.printError(
++          'The iOS simulator log stream did not start after ${warningDelay.inSeconds} seconds. '
++          'This is taking much longer than expected...',
++        );
++      });
++      await logReader._ready.future;
++      timer.cancel();
+     }
+ 
+     // Launch the updated application in the simulator.
+@@ -611,7 +622,7 @@
+   }
+ 
+   @override
+-  DeviceLogReader getLogReader({covariant IOSApp? app, bool includePastLogs = false}) {
++  _IOSSimulatorLogReader getLogReader({covariant IOSApp? app, bool includePastLogs = false}) {
+     assert(!includePastLogs, 'Past log reading not supported on iOS simulators.');
+     return _logReaders.putIfAbsent(app, () => _IOSSimulatorLogReader(this, app));
+   }
+@@ -824,6 +835,9 @@
+     onCancel: _stop,
+   );
+ 
++  // Completes when the first log-stream header arrives or the process exits.
++  var _ready = Completer<void>();
++
+   @override
+   @visibleForTesting
+   StreamController<String> get linesController => _linesController;
+@@ -839,10 +853,17 @@
+   String get name => device.name;
+ 
+   Future<void> _start() async {
++    _ready = Completer<void>();
++    final Completer<void> ready = _ready;
+     // Unified logging iOS 11 and greater (introduced in iOS 10).
+     if (await device.sdkMajorVersion >= 11) {
+       _deviceProcess = await launchDeviceUnifiedLogging(device, _appName);
+-      _deviceProcess?.stdout.transform(utf8LineDecoder).listen(_onUnifiedLoggingLine);
++      _deviceProcess?.stdout.transform(utf8LineDecoder).listen((String line) {
++        if (!ready.isCompleted) {
++          ready.complete();
++        }
++        _onUnifiedLoggingLine(line);
++      });
+       _deviceProcess?.stderr.transform(utf8LineDecoder).listen(_onUnifiedLoggingLine);
+     } else {
+       // Fall back to syslog parsing.
+@@ -864,6 +885,9 @@
+     // cleanup in the callback.
+     unawaited(
+       _deviceProcess?.exitCode.whenComplete(() {
++        if (!ready.isCompleted) {
++          ready.complete();
++        }
+         if (_linesController.hasListener) {
+           _linesController.close();
+         }

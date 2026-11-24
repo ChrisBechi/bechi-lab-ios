@@ -44,6 +44,8 @@ jobs:
           subprocess.run(['ditto','-x','-k',str(path),os.environ['RUNNER_TEMP']],check=True)
           with open(os.environ['GITHUB_PATH'],'a') as output:output.write(os.environ['RUNNER_TEMP']+'/flutter/bin\n')
           PY
+      - name: Apply official simulator log-reader race fix
+        run: python3 ci/patch_flutter.py "$RUNNER_TEMP/flutter"
       - run: flutter config --no-enable-swift-package-manager
       - run: flutter pub get --enforce-lockfile
       - name: Record source provenance
