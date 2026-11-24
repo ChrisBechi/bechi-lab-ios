@@ -73,7 +73,10 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       view.callAsyncJavaScript("return await window.__bechiReadHosted(url, range)", arguments: ["url": value, "range": range as Any? ?? NSNull()], in: frame, in: .page) { value in
         switch value {
         case .success(let payload):
-          guard let payload = payload as? [String: Any], ((payload["data"] as? String)?.utf8.count ?? 0) <= 23000000 else { self.fail(result, "SOURCE_READ"); return }
+          guard var payload = payload as? [String: Any], let encoded = payload["data"] as? String, encoded.utf8.count <= 23000000,
+                let bytes = Data(base64Encoded: encoded), bytes.count <= 16777216 else { self.fail(result, "SOURCE_READ"); return }
+          // Binary channel payload avoids a second base64 copy in Dart.
+          payload["data"] = FlutterStandardTypedData(bytes: bytes)
           result(payload)
         case .failure: self.fail(result, "SOURCE_READ")
         }
@@ -90,7 +93,11 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   }
 
   private func framesForRoot(_ root: String) -> WKFrameInfo? {
-    frames.values.first { $0.request.url.map { $0.scheme == "https" && ($0.absoluteString == root || $0.absoluteString == target["url"] as? String) } == true }
+    frames.values.first { frame in
+      guard let url = frame.request.url, url.scheme == "https", var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return false }
+      parts.query = nil; parts.fragment = nil
+      return parts.url?.absoluteString == root || parts.url?.absoluteString == target["url"] as? String
+    }
   }
   private func safeMedia(_ url: URL) -> Bool {
     guard url.scheme == "https", url.user == nil, url.password == nil, url.port == nil, url.fragment == nil, let host = url.host?.lowercased(), host.contains("."), !host.hasSuffix(".local"), !host.hasSuffix(".localhost"), host != "localhost" else { return false }

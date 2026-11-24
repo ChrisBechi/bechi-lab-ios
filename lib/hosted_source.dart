@@ -317,17 +317,18 @@ class HostedSource {
       if (_closed || epoch != _epoch) {
         throw const ApiFailure('SOURCE_CLOSED', 'Reprodução encerrada.');
       }
+      final raw = value?['data'];
       if (value == null ||
           ![200, 206, 416].contains(value['status']) ||
           range != null && ![206, 416].contains(value['status']) ||
-          value['data'] is! String ||
-          (value['data'] as String).length > 23000000) {
+          raw is! Uint8List && raw is! String ||
+          raw is String && raw.length > 23000000) {
         throw const ApiFailure(
           'SOURCE_READ',
           'A origem não entregou o trecho de vídeo.',
         );
       }
-      final bytes = base64Decode(value['data'] as String);
+      final bytes = raw is Uint8List ? raw : base64Decode(raw as String);
       if (bytes.length > 16777216) {
         throw const ApiFailure('SOURCE_SIZE', 'O trecho excedeu o limite.');
       }

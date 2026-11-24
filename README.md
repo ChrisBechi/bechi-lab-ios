@@ -31,6 +31,9 @@ flutter test integration_test/native_player_test.dart -d <iPhone-simulator>
 
 Os testes de lógica cobrem as fontes e as sessões. A integração decodifica
 AVI/Xvid/MP3, MP4/H264/AAC, MKV/H264/AC3 e MKV/HEVC/EAC3 com duas faixas de áudio e legenda.
+Também inclui MOV/PCM, WebM/VP9/Opus, MPEG-TS, FLV/MP3, WMV/WMA, MPEG-2/MP2
+e MKV/DTS. HLS é exercitado pelas transmissões reais; não se confunde uma
+extensão aceita com a confirmação de todos os codecs possíveis naquele formato.
 Os vídeos são sintéticos, criados pelo projeto. Os testes verificam o motor
 real, pausa, busca, menus e retorno de rota. A disponibilidade e reprodução
 das fontes reais são registradas separadamente.

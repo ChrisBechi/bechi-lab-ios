@@ -47,6 +47,55 @@ const codecCases = [
     'fixture',
     asset: 'assets/fixtures/native-ac3.mkv',
   ),
+  SourceCase(
+    'codec-webm',
+    'Teste nativo · WebM / VP9 / Opus',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-vp9-opus.webm',
+  ),
+  SourceCase(
+    'codec-mov',
+    'Teste nativo · MOV / H264 / PCM',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-h264-pcm.mov',
+  ),
+  SourceCase(
+    'codec-ts',
+    'Teste nativo · MPEG-TS / H264 / AAC',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-h264-aac.ts',
+  ),
+  SourceCase(
+    'codec-flv',
+    'Teste nativo · FLV / MP3',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-flv1-mp3.flv',
+  ),
+  SourceCase(
+    'codec-wmv',
+    'Teste nativo · WMV / WMA',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-wmv2-wma.wmv',
+  ),
+  SourceCase(
+    'codec-mpeg',
+    'Teste nativo · MPEG-2 / MP2',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-mpeg2-mp2.mpg',
+  ),
+  SourceCase(
+    'codec-dts',
+    'Teste nativo · MKV / H264 / DTS',
+    'Vídeo sintético local',
+    'fixture',
+    asset: 'assets/fixtures/native-h264-dts.mkv',
+  ),
 ];
 const sourceCases = [
   SourceCase(

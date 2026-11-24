@@ -27,12 +27,13 @@
     }, true);
   }
   async function principal(page) {
-    const movie = page.movie, id = movie && typeof INITIAL_CONTENT_ID === 'number' ? INITIAL_CONTENT_ID : window.ALL_EPISODES?.[page.season]?.find(e => Number(e.epi_num) === page.episode)?.ID;
+    const movie = page.movie, id = movie ? window.CURRENT_EPISODE?.ID || (typeof INITIAL_CONTENT_ID === 'number' ? INITIAL_CONTENT_ID : undefined) : window.ALL_EPISODES?.[page.season]?.find(e => Number(e.epi_num) === page.episode)?.ID;
     if (!Number.isSafeInteger(id) || id <= 0 || typeof window.fetchBootstrapOptions !== 'function' || typeof window.requirePageTokenClient !== 'function' || typeof window.sfEdgeHeaders !== 'function' || window.API_URL_SOURCE !== '/player/source') return false;
     const rows = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(Error('SOURCE_OPTIONS_TIMEOUT')), 20000);
       window.fetchBootstrapOptions(id, rows => { clearTimeout(timer); resolve(rows); }, () => { clearTimeout(timer); reject(Error('SOURCE_OPTIONS')); });
     });
+    if (target.epoch !== page.epoch) return false;
     const row = rows.find(v => String(v.type) === '1' && !v.can_download && !v.is_fake && !v.is_fallback_mode);
     if (!row || !String(row.ID)) throw Error('SOURCE_PRINCIPAL');
     const token = window.requirePageTokenClient();
@@ -66,7 +67,6 @@
           const select = [...document.querySelectorAll('select')].find(s => [...s.options].some(o => o.value === String(target.season)));
           if (select) select.value = String(target.season);
           window.renderEpisodes(target.season);
-          document.querySelector(`[data-epi-num="${target.episode}"]`)?.click();
         }
         if (await principal(requested)) prepared = requested.epoch;
       } catch (error) { if (target.epoch === requested.epoch) { failed = true; post('failure', {code: /^SOURCE_[A-Z_]+$/.test(error.message) ? error.message : 'SOURCE_PREPARATION'}); } }

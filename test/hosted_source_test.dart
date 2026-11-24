@@ -30,7 +30,7 @@ void main() {
             'status': 206,
             'type': 'video/mp4',
             'range': 'bytes $start-$end/${bytes.length}',
-            'data': base64Encode(bytes.sublist(start, end + 1)),
+            'data': Uint8List.sublistView(bytes, start, end + 1),
           };
         },
       );

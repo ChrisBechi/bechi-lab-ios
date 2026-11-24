@@ -6,6 +6,10 @@ on:
         type: boolean
         default: false
         description: Publish the verified native IPA
+      providers:
+        type: boolean
+        default: false
+        description: Test real providers with a temporary QA session
 permissions:
   contents: write
 concurrency:
@@ -14,7 +18,7 @@ concurrency:
 jobs:
   ios:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,6 +61,13 @@ jobs:
       - name: Test real native decoding and Flutter controls on iPhone
         timeout-minutes: 17
         run: python3 ci/native_test.py
+      - name: Test real providers separately
+        if: inputs.providers
+        continue-on-error: true
+        timeout-minutes: 68
+        env:
+          BECHI_QA_TOKEN: ${{ secrets.BECHI_NATIVE_QA_SESSION }}
+        run: python3 ci/native_test.py --providers
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -100,6 +101,10 @@ void main() {
         final native = player.platform as NativePlayer;
         expect(await native.getProperty('tls-verify'), 'yes');
         expect(await native.getProperty('hls-bitrate'), 'max');
+        final videoCodec = await native.getProperty('video-codec');
+        final audioCodec = await native.getProperty('audio-codec-name');
+        expect(videoCodec, isNotEmpty);
+        expect(audioCodec, isNotEmpty);
         await key.currentState!.player.pause();
         await tester.pump();
         final paused = player.state.position;
@@ -153,7 +158,11 @@ void main() {
         expect(errors, isEmpty);
         binding.reportData ??= {};
         binding.reportData![source.id] = {
+          'source': source.id,
+          'passed': true,
           'video': '320x180',
+          'video_codec': videoCodec,
+          'audio_codec': audioCodec,
           'audio': true,
           'pause': true,
           'seek_forward': true,
@@ -162,6 +171,9 @@ void main() {
           'engine': 'native libmpv',
           'first_frame_ms': key.currentState!.firstFrameMs,
         };
+        debugPrint(
+          'NATIVE_CODEC_RESULT ${jsonEncode(binding.reportData![source.id])}',
+        );
         await sub.cancel();
         final leaving = key.currentState!.leave();
         await until(tester, () => key.currentState == null);

@@ -28,6 +28,13 @@ flutter:
     - assets/fixtures/native-ac3.mkv
     - assets/fixtures/native-hevc-eac3.mkv
     - assets/fixtures/native-xvid-mp3.avi
+    - assets/fixtures/native-vp9-opus.webm
+    - assets/fixtures/native-h264-pcm.mov
+    - assets/fixtures/native-h264-aac.ts
+    - assets/fixtures/native-flv1-mp3.flv
+    - assets/fixtures/native-wmv2-wma.wmv
+    - assets/fixtures/native-mpeg2-mp2.mpg
+    - assets/fixtures/native-h264-dts.mkv
     - assets/certificates/cacert.pem
     - assets/hosted_source.js
     - assets/build_info.json
