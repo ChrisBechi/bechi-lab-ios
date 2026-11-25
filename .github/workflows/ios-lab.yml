@@ -60,12 +60,19 @@ jobs:
       - run: node --test test/hosted_source.test.mjs
       - name: Start an available iPhone simulator
         id: simulator
+        timeout-minutes: 8
         shell: bash
         run: |
           DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,rows in d["devices"].items() if "iOS" in k for v in rows if v["isAvailable"] and "iPhone" in v["name"]))')
           echo "BECHI_SIMULATOR=$DEVICE_ID" >> "$GITHUB_ENV"
           xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
+      - name: Capture simulator boot failure
+        if: ${{ failure() && steps.simulator.outcome == 'failure' }}
+        run: |
+          mkdir -p native-diagnostics/boot
+          xcrun simctl list --json > native-diagnostics/boot/devices.json
+          xcrun simctl spawn "$BECHI_SIMULATOR" log show --last 2m --style compact --predicate 'process == "SpringBoard"' > native-diagnostics/boot/springboard.log 2>&1 || true
       - name: Test real native decoding and Flutter controls on iPhone
         timeout-minutes: 17
         run: python3 ci/native_test.py
