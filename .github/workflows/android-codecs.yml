@@ -1,6 +1,11 @@
 name: Build Android codec diagnostic
 on:
   workflow_dispatch:
+    inputs:
+      emulator:
+        type: boolean
+        default: false
+        description: Exercise the native decoder and controls in an Android emulator
 permissions:
   contents: read
 concurrency:
@@ -56,3 +61,31 @@ jobs:
             dist/Bechi-Codecs-0.2.0.apk
             dist/Bechi-Codec-Checks-0.2.0.apk
             dist/SHA256-Android.txt
+  emulator:
+    if: inputs.emulator
+    needs: android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: Bechi-Android-Codecs
+          path: dist
+      - name: Verify the APKs from this build
+        working-directory: dist
+        run: sha256sum --check SHA256-Android.txt
+      - name: Prepare an isolated official Android image
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'system-images;android-35;google_apis;x86_64'
+          echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name bechi-native --package 'system-images;android-35;google_apis;x86_64' --device pixel_2
+          sudo chmod a+rw /dev/kvm
+      - name: Exercise all eleven codecs and native controls
+        run: python3 ci/android_native_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Android-native-diagnostics
+          path: android-diagnostics/
