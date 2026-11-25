@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "app.bechiflix.codecdebug"
+        applicationId = if (System.getenv("BECHI_CODEC_TESTS") == "1") "app.bechiflix.codecchecks" else "app.bechiflix.codecdebug"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
