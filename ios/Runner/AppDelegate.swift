@@ -1,8 +1,11 @@
 import Flutter
 import UIKit
+import AVFAudio
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var audioChannel: FlutterMethodChannel?
+  private var audioLeases = Set<String>()
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -12,6 +15,32 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BechiAudioSession") {
+      let channel = FlutterMethodChannel(name: "app.bechiflix.native/audio", binaryMessenger: registrar.messenger())
+      audioChannel = channel
+      channel.setMethodCallHandler { [weak self] call, result in
+        guard let self = self, let args = call.arguments as? [String: Any],
+              let lease = args["lease"] as? String, UUID(uuidString: lease) != nil else {
+          result(FlutterError(code: "AUDIO_INPUT", message: "Invalid audio session", details: nil)); return
+        }
+        let session = AVAudioSession.sharedInstance()
+        do {
+          if call.method == "activate" {
+            if self.audioLeases.isEmpty { try session.setCategory(.playback, mode: .moviePlayback) }
+            try session.setActive(true)
+            self.audioLeases.insert(lease)
+            result(["sample_rate": session.sampleRate, "output_channels": session.outputNumberOfChannels])
+          } else if call.method == "release" {
+            if self.audioLeases.remove(lease) != nil && self.audioLeases.isEmpty {
+              try session.setActive(false, options: .notifyOthersOnDeactivation)
+            }
+            result(nil)
+          } else { result(FlutterMethodNotImplemented) }
+        } catch {
+          result(FlutterError(code: "AUDIO_SESSION", message: "Não foi possível ativar a saída de áudio.", details: (error as NSError).code))
+        }
+      }
+    }
     if #available(iOS 14.0, *), let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BechiHostedSource") {
       HostedSource.register(with: registrar)
     }

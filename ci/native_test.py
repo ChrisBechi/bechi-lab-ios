@@ -49,10 +49,10 @@ for line in lines:
         try:
             result=json.loads(match.group(1));results[result['source']]=result
         except (ValueError,KeyError):pass
-(folder/'results.json').write_text(json.dumps({'exit':code,'results':list(results.values())},indent=2))
 expected=16 if providers else 11
 if code==0 and (len(results)!=expected or any(row.get('passed') is not True for row in results.values())):
     print('Native run did not return a passing result for every expected case.')
     code=1
+(folder/'results.json').write_text(json.dumps({'exit':code,'results':list(results.values())},indent=2))
 print('\n'.join(lines[-140:]))
 sys.exit(code)

@@ -176,7 +176,6 @@ void main() {
           expect(tester.takeException(), isNull);
           expect(errors, isEmpty);
           outcome.addAll({
-            'passed': true,
             'video': '320x180',
             'video_codec': videoCodec,
             'audio_codec': audioCodec,
@@ -195,6 +194,7 @@ void main() {
           await leaving;
           await tester.pumpAndSettle();
           expect(find.text('Abrir teste'), findsOneWidget);
+          outcome['passed'] = true;
         } finally {
           if (outcome['passed'] != true) {
             outcome.addAll({

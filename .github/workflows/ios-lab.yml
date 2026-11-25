@@ -69,6 +69,11 @@ jobs:
       - name: Test real native decoding and Flutter controls on iPhone
         timeout-minutes: 17
         run: python3 ci/native_test.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Native-codec-diagnostics
+          path: native-diagnostics/codecs/
       - name: Test real providers separately
         if: ${{ !cancelled() && inputs.providers && steps.simulator.outcome == 'success' }}
         continue-on-error: true

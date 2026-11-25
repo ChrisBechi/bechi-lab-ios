@@ -246,7 +246,9 @@ class NativePlayerPageState extends State<NativePlayerPage> {
       unawaited(subscription.cancel());
     }
     unawaited(session.close());
-    unawaited(player.dispose());
+    unawaited(
+      player.dispose().whenComplete(() => releaseNativeEngineAudio(player)),
+    );
     super.dispose();
   }
 
