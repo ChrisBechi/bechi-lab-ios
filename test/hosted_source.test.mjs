@@ -4,18 +4,22 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {webcrypto} from 'node:crypto';
 const script=await readFile(new URL('../assets/hosted_source.js',import.meta.url),'utf8');
-function run({kind='superflix',host='superflixapi.boats',path='/serie/246992',principal='https://xn--80adalaab0boiodbce7addhh.delivery/video/'+'a'.repeat(32),media='https://media.example/own.m3u8',checkbox=false}={}){
+function run({kind='superflix',host='superflixapi.boats',path='/serie/246992',principal='https://xn--80adalaab0boiodbce7addhh.delivery/video/'+'a'.repeat(32),media='https://media.example/own.m3u8',checkbox=false,movie=false}={}){
  const messages=[],opens=[],requests=[],clicks=[],handlers=new Map();
- const target={kind,epoch:'own-test-epoch',root:'https://superflixapi.boats/serie/246992',url:kind==='c7'?'https://abyssplayer.com/iwBlab3Rj':'https://superflixapi.boats/serie/246992/1/1',expectedTitle:'Sereias',season:1,episode:1};
+ const target={kind,movie,epoch:'own-test-epoch',root:movie?'https://superflixapi.boats/filme/246992':'https://superflixapi.boats/serie/246992',url:kind==='c7'?'https://abyssplayer.com/iwBlab3Rj':movie?'https://superflixapi.boats/filme/246992':'https://superflixapi.boats/serie/246992/1/1',expectedTitle:'Sereias',season:1,episode:1};
  const document={title:kind==='c7'?'Berlim T01_EP-01_Dublado_1080p.mp4':'Sereias',querySelector(selector){if(selector==='.jwplayer[id]'&&(kind==='c7'||host!=='superflixapi.boats'))return{id:'video'};if(checkbox&&selector.includes('checkbox'))return{getClientRects:()=>[{}],click:()=>clicks.push(true)};return null;},querySelectorAll:()=>[],addEventListener:()=>{}};
  const window={__bechiHostedTarget:target,webkit:{messageHandlers:{bechiHosted:{postMessage:m=>messages.push(m)}}},ALL_EPISODES:{1:[{ID:123,epi_num:1}]},fetchBootstrapOptions:(id,done)=>done([{ID:90,type:'1',is_fake:true},{ID:91,type:'2'},{ID:92,type:'1'}]),requirePageTokenClient:()=> 'normal-page-fixture',sfEdgeHeaders:()=>({'X-Own-Page':'fixture'}),API_URL_SOURCE:'/player/source',CSRF_TOKEN:'page-csrf-fixture',renderEpisodes:()=>{},closePlayer:()=>{},openIframe:(...args)=>opens.push(args),jwplayer:()=>({getConfig:()=>({title:'Sereias 1x1'}),getPlaylistItem:()=>({sources:[{file:media,label:'1080p',type:kind==='c7'?'mp4':'hls'}]}),pause:()=>{},setMute:()=>{}})};
  window.addEventListener=(name,callback)=>handlers.set(name,callback);
+ if(movie)window.CURRENT_EPISODE={ID:456};
  const context={window,document,location:{hostname:host,origin:'https://'+host,pathname:path},crypto:webcrypto,URL,URLSearchParams,AbortSignal,AbortController,Uint8Array,btoa,clearTimeout,setInterval:()=>1,setTimeout:(fn,ms)=>ms===0?setTimeout(fn,0):setTimeout(fn,Math.min(ms,100)),fetch:async(url,options)=>{requests.push({url,options});return Response.json({data:{video_url:principal,fireplayer_ad_control:{normal:true}}});}};
  vm.runInNewContext(script,context);return{messages,opens,requests,clicks,window,message:value=>handlers.get('message')?.(value)};
 }
 test('SuperFlix selects principal with the real page APIs without opening a chooser',async()=>{
  const r=run();await new Promise(resolve=>setTimeout(resolve,20));
  assert.equal(r.requests.length,1);assert.equal(r.requests[0].url,'/player/source');assert.equal(r.requests[0].options.body.get('video_id'),'92');assert.equal(r.opens.length,1);assert(r.messages.some(m=>m.type==='validated'));assert.equal(r.window.open(),null);
+});
+test('SuperFlix movie uses its content identifier without a season or episode chooser',async()=>{
+ const r=run({movie:true,path:'/filme/246992'});await new Promise(resolve=>setTimeout(resolve,20));assert.equal(r.requests.length,1);assert.equal(r.opens.length,1);assert(r.messages.some(v=>v.type==='validated'));
 });
 test('source rejection preserves failure instead of opening an unapproved player',async()=>{
  const r=run({principal:'https://foreign.example/player'});await new Promise(resolve=>setTimeout(resolve,20));assert.equal(r.opens.length,0);assert(r.messages.some(m=>m.type==='failure'));

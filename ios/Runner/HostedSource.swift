@@ -116,6 +116,9 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   private func showVerification() {
     guard verification == nil, pending != nil, let view = web, let root = rootController() else { return }
     timeout?.cancel(); timeout = nil
+    for frame in frames.values {
+      view.callAsyncJavaScript("if (document.documentElement) document.documentElement.style.visibility = 'visible'", arguments: [:], in: frame, in: .page) { _ in }
+    }
     let screen = HostedVerificationController(web: view) { [weak self] in self?.finishFailure("VERIFICATION_CANCELLED"); self?.dismissVerification() }
     let navigation = UINavigationController(rootViewController: screen); navigation.modalPresentationStyle = .fullScreen
     navigation.isModalInPresentation = true; verification = navigation
