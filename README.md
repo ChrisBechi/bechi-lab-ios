@@ -52,3 +52,11 @@ O IPA sem assinatura precisa ser reassinado no SideStore ou Sideloadly.
 O arquivo build_info.json identifica o commit realmente compilado.
 A conferência física de imagem, áudio e desempenho é feita após instalar.
 Fontes das bibliotecas e avisos estão em THIRD_PARTY_NOTICES.txt.
+
+## Diagnóstico Android por USB
+
+O alvo `lib/codec_debug.dart` permite testar os mesmos 11 vídeos sintéticos sem
+conta e sem rede no Android. O APK de depuração usa um identificador separado,
+`app.bechiflix.codecdebug`. Drive e demais fontes diretas também podem ser
+conferidos pelo login normal. Os conectores privados SuperFlix/C7 desta versão
+usam Swift/WebKit e são validados no iPhone; o teste Android não os substitui.

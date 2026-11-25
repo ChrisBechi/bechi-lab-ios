@@ -1,0 +1,48 @@
+name: Build Android codec diagnostic
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install verified Flutter SDK
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess,urllib.request
+          root='https://storage.googleapis.com/flutter_infra_release/releases/'
+          with urllib.request.urlopen(root+'releases_linux.json',timeout=30) as response: releases=json.load(response)['releases']
+          release=next(r for r in releases if r['version']=='3.44.2' and r['channel']=='stable' and r.get('dart_sdk_arch','x64')=='x64')
+          path=pathlib.Path(os.environ['RUNNER_TEMP'])/'flutter.tar.xz'
+          urllib.request.urlretrieve(root+release['archive'],path)
+          digest=hashlib.sha256()
+          with path.open('rb') as stream:
+              for block in iter(lambda:stream.read(1024*1024),b''):digest.update(block)
+          assert digest.hexdigest()==release['sha256']
+          subprocess.run(['tar','-xJf',str(path),'-C',os.environ['RUNNER_TEMP']],check=True)
+          with open(os.environ['GITHUB_PATH'],'a') as output:output.write(os.environ['RUNNER_TEMP']+'/flutter/bin\n')
+          PY
+      - name: Record source provenance
+        run: python3 -c 'import json,os,pathlib; pathlib.Path("assets/build_info.json").write_text(json.dumps({"version":"0.2.0","commit":os.environ["GITHUB_SHA"],"run":os.environ["GITHUB_RUN_ID"]}))'
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter analyze --fatal-infos
+      - run: flutter test
+      - run: flutter build apk --debug --target lib/codec_debug.dart
+      - name: Package diagnostic
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-debug.apk dist/Bechi-Codecs-0.2.0.apk
+          cd dist
+          sha256sum Bechi-Codecs-0.2.0.apk > SHA256-Android.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Bechi-Android-Codecs
+          path: |
+            dist/Bechi-Codecs-0.2.0.apk
+            dist/SHA256-Android.txt
