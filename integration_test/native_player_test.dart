@@ -106,7 +106,15 @@ void main() {
         final outcome = <String, dynamic>{'source': source.id, 'passed': false};
         var playerOwnedByPage = false;
         try {
-          await tester.runAsync(() => prepareDiagnosticPlayer(player));
+          final configured = await tester.runAsync(() async {
+            await prepareDiagnosticPlayer(player);
+            return true;
+          });
+          expect(
+            configured,
+            true,
+            reason: 'The native test environment must initialize.',
+          );
           await tester.pumpWidget(
             MaterialApp(
               theme: ThemeData.dark(),

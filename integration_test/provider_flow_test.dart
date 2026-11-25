@@ -45,7 +45,15 @@ void main() {
         var playerOwnedByPage = false;
         var outcome = <String, dynamic>{'source': source.id, 'passed': false};
         try {
-          await tester.runAsync(() => prepareDiagnosticPlayer(player));
+          final configured = await tester.runAsync(() async {
+            await prepareDiagnosticPlayer(player);
+            return true;
+          });
+          expect(
+            configured,
+            true,
+            reason: 'The native test environment must initialize.',
+          );
           expect(
             await tester.runAsync(api.restore),
             true,
