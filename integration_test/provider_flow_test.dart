@@ -7,12 +7,27 @@ import 'package:media_kit/media_kit.dart';
 import 'package:bechi_player_prototype/bechi_api.dart';
 import 'package:bechi_player_prototype/player_view.dart';
 import 'package:bechi_player_prototype/source_case.dart';
-import 'native_player_test.dart' show until;
+import 'native_player_test.dart'
+    show
+        until,
+        simulatorDecoderOnly,
+        simulatorTestChannel,
+        prepareDiagnosticPlayer;
 
 /// Passed to the simulator process at runtime, never compiled into an IPA.
 class TemporaryStore implements SessionStore {
   @override
-  Future<String?> read() async => Platform.environment['BECHI_QA_TOKEN'];
+  Future<String?> read() async {
+    final token = Platform.environment['BECHI_QA_TOKEN'];
+    if (token != null) return token;
+    if (!Platform.isIOS) return null;
+    final context = await simulatorTestChannel.invokeMapMethod<String, dynamic>(
+      'context',
+    );
+    final nativeToken = context?['qa_session'];
+    return nativeToken is String && nativeToken.isNotEmpty ? nativeToken : null;
+  }
+
   @override
   Future<void> write(String? value) async {}
 }
@@ -20,15 +35,17 @@ class TemporaryStore implements SessionStore {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  final enabled = Platform.environment.containsKey('BECHI_QA_TOKEN');
   for (final source in sourceCases) {
     testWidgets(
       '${source.id}: real provider and native playback',
       (tester) async {
         final api = BechiApi(store: TemporaryStore());
+        final player = Player();
         final key = GlobalKey<NativePlayerPageState>();
+        var playerOwnedByPage = false;
         var outcome = <String, dynamic>{'source': source.id, 'passed': false};
         try {
+          await tester.runAsync(() => prepareDiagnosticPlayer(player));
           expect(
             await tester.runAsync(api.restore),
             true,
@@ -46,6 +63,7 @@ void main() {
                           key: key,
                           api: api,
                           source: source,
+                          player: player,
                         ),
                       ),
                     ),
@@ -57,6 +75,7 @@ void main() {
           );
           await tester.tap(find.text('Abrir fonte'));
           await tester.pump();
+          playerOwnedByPage = key.currentState != null;
           await until(
             tester,
             () =>
@@ -72,7 +91,7 @@ void main() {
             reason: 'The requested source must open.',
           );
           expect(state.playback!.sourceType, source.sourceType);
-          final player = state.player;
+          expect(state.player, same(player));
           expect(player.platform, isA<NativePlayer>());
           expect(player.state.width, greaterThan(0));
           expect(player.state.height, greaterThan(0));
@@ -82,12 +101,23 @@ void main() {
             ),
             isNotEmpty,
           );
+          await until(
+            tester,
+            () => (player.state.audioParams.sampleRate ?? 0) > 0,
+          );
+          final native = player.platform as NativePlayer;
+          final audioOutput = await native.getProperty('current-ao');
+          expect(audioOutput, simulatorDecoderOnly ? 'null' : isNot('null'));
           outcome.addAll({
             'engine': 'native libmpv',
             'first_frame_ms': state.firstFrameMs,
             'width': player.state.width,
             'height': player.state.height,
             'audio_tracks': player.state.tracks.audio.length,
+            'audio_decoded': true,
+            'audio_sample_rate': player.state.audioParams.sampleRate,
+            'audio_output': audioOutput,
+            'system_audio_verified': !simulatorDecoderOnly,
             'stage': 'steady',
           });
           final first = player.state.position;
@@ -185,6 +215,7 @@ void main() {
             await tester.pumpAndSettle();
             await state.session.close();
           }
+          if (!playerOwnedByPage) await player.dispose();
           api.dispose();
           binding.reportData ??= {};
           binding.reportData![source.id] = outcome;
@@ -192,7 +223,6 @@ void main() {
           debugPrint('NATIVE_PROVIDER_RESULT ${jsonEncode(outcome)}');
         }
       },
-      skip: !enabled,
       timeout: const Timeout(Duration(minutes: 10)),
     );
   }

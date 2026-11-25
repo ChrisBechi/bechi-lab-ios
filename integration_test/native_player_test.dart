@@ -1,11 +1,30 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:bechi_player_prototype/bechi_api.dart';
 import 'package:bechi_player_prototype/player_view.dart';
 import 'package:bechi_player_prototype/source_case.dart';
+
+// The official libmpv 0.6.0 simulator slice has no AudioUnit driver. Exercise
+// actual decoding through a virtual sink only in CI, never in device builds.
+const simulatorDecoderOnly = bool.fromEnvironment(
+  'BECHI_SIMULATOR_DECODER_ONLY',
+);
+const simulatorTestChannel = MethodChannel('app.bechiflix.native/test');
+Future<void> prepareDiagnosticPlayer(Player player) async {
+  if (!simulatorDecoderOnly) return;
+  final context = await simulatorTestChannel.invokeMapMethod<String, dynamic>(
+    'context',
+  );
+  if (!Platform.isIOS || context?['simulator'] != true) {
+    throw StateError('Virtual audio is restricted to the iOS simulator test.');
+  }
+  await (player.platform as NativePlayer).setProperty('ao', 'null');
+}
 
 class EmptyStore implements SessionStore {
   @override
@@ -72,7 +91,9 @@ void main() {
         );
         final key = GlobalKey<NativePlayerPageState>();
         final outcome = <String, dynamic>{'source': source.id, 'passed': false};
+        var playerOwnedByPage = false;
         try {
+          await tester.runAsync(() => prepareDiagnosticPlayer(player));
           await tester.pumpWidget(
             MaterialApp(
               theme: ThemeData.dark(),
@@ -97,6 +118,7 @@ void main() {
           );
           await tester.tap(find.text('Abrir teste'));
           await tester.pump(const Duration(milliseconds: 500));
+          playerOwnedByPage = key.currentState != null;
           await until(
             tester,
             () =>
@@ -128,6 +150,8 @@ void main() {
             await native.getProperty('audio-out-params/samplerate'),
           );
           expect(audioOutputRate, greaterThan(0));
+          final audioOutput = await native.getProperty('current-ao');
+          expect(audioOutput, simulatorDecoderOnly ? 'null' : isNot('null'));
           await key.currentState!.player.pause();
           await tester.pump();
           final paused = player.state.position;
@@ -191,7 +215,9 @@ void main() {
             'audio_codec': audioCodec,
             'audio_sample_rate': player.state.audioParams.sampleRate,
             'audio_output_sample_rate': audioOutputRate,
-            'audio': true,
+            'audio_decoded': true,
+            'audio_output': audioOutput,
+            'system_audio_verified': !simulatorDecoderOnly,
             'pause': true,
             'seek_forward': true,
             'seek_back': true,
@@ -222,6 +248,7 @@ void main() {
           // cannot keep rendering or hold audio resources in the next test.
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump();
+          if (!playerOwnedByPage) await player.dispose();
           api.dispose();
           binding.reportData ??= {};
           binding.reportData![source.id] = outcome;

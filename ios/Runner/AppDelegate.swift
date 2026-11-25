@@ -6,6 +6,9 @@ import AVFAudio
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var audioChannel: FlutterMethodChannel?
   private var audioLeases = Set<String>()
+  #if DEBUG && targetEnvironment(simulator)
+  private var testChannel: FlutterMethodChannel?
+  #endif
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -15,6 +18,18 @@ import AVFAudio
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    #if DEBUG && targetEnvironment(simulator)
+    // Runtime-only simulator identity. No QA token or test channel is compiled
+    // into device releases; Dart's environment map is empty on this iOS runner.
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BechiSimulatorDiagnostics") {
+      let channel = FlutterMethodChannel(name: "app.bechiflix.native/test", binaryMessenger: registrar.messenger())
+      testChannel = channel
+      channel.setMethodCallHandler { call, result in
+        guard call.method == "context" else { result(FlutterMethodNotImplemented); return }
+        result(["simulator": true, "qa_session": ProcessInfo.processInfo.environment["BECHI_QA_TOKEN"] ?? ""])
+      }
+    }
+    #endif
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BechiAudioSession") {
       let channel = FlutterMethodChannel(name: "app.bechiflix.native/audio", binaryMessenger: registrar.messenger())
       audioChannel = channel

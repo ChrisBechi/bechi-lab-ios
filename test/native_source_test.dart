@@ -189,9 +189,9 @@ void main() {
     );
   }
 
-  test(
+  testWidgets(
     'preparation retries, cancellation and timeout never loop forever',
-    () async {
+    (tester) async {
       final source = sourceCases.firstWhere((s) => s.id == 'drive');
       var attempts = 0;
       final api = BechiApi(
@@ -215,7 +215,7 @@ void main() {
         preparationTimeout: const Duration(milliseconds: 15),
       );
       try {
-        await expectLater(
+        final completion = expectLater(
           session.open(),
           throwsA(
             isA<ApiFailure>().having(
@@ -225,7 +225,12 @@ void main() {
             ),
           ),
         );
+        await tester.pump();
+        expect(attempts, 1);
+        await tester.pump(const Duration(milliseconds: 1));
         expect(attempts, greaterThan(1));
+        await tester.pump(const Duration(milliseconds: 20));
+        await completion;
       } finally {
         await session.close();
         api.dispose();

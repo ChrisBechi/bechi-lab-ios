@@ -26,7 +26,7 @@ a sessão encerrada. Uma fonte não é substituída silenciosamente por outra.
 flutter pub get --enforce-lockfile
 flutter analyze --fatal-infos
 flutter test
-flutter test integration_test/native_player_test.dart -d <iPhone-simulator>
+flutter test integration_test/native_player_test.dart -d <iPhone-simulator> --dart-define=BECHI_SIMULATOR_DECODER_ONLY=true
 ```
 
 Os testes de lógica cobrem as fontes e as sessões. A integração decodifica
@@ -37,6 +37,16 @@ extensão aceita com a confirmação de todos os codecs possíveis naquele forma
 Os vídeos são sintéticos, criados pelo projeto. Os testes verificam o motor
 real, pausa, busca, menus e retorno de rota. A disponibilidade e reprodução
 das fontes reais são registradas separadamente.
+
+A biblioteca oficial libmpv 0.6.0 inclui AudioUnit no iPhone físico, mas não
+na fatia do simulador. Por isso o CI usa uma saída virtual exclusivamente no
+teste do simulador: valida codecs, áudio decodificado e controles, e registra
+`system_audio_verified: false`. O aplicativo de dispositivo mantém a saída
+real; o som audível precisa ser conferido em hardware. A sessão temporária de
+QA entra em tempo de execução no simulador e é removida ao terminar, sem ser
+compilada no IPA. O workflow falha se faltar qualquer resultado esperado.
+O [script oficial desta versão](https://github.com/media-kit/libmpv-darwin-build/blob/v0.6.0/scripts/mpv/build.sh)
+habilita AudioUnit apenas para o alvo `ios`, deixando `iossimulator` sem ele.
 
 ## Gerar IPA
 

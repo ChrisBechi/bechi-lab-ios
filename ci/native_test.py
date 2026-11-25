@@ -4,11 +4,15 @@ import json,os,pathlib,re,signal,subprocess,sys,time
 providers='--providers' in sys.argv
 folder=pathlib.Path('native-diagnostics/providers' if providers else 'native-diagnostics/codecs');folder.mkdir(parents=True,exist_ok=True)
 target='provider_flow_test.dart' if providers else 'native_player_test.dart'
-command=['flutter','test','integration_test/'+target,'-d',os.environ['BECHI_SIMULATOR'],'--no-pub','--timeout','5m' if providers else '2m']
+command=['flutter','test','integration_test/'+target,'-d',os.environ['BECHI_SIMULATOR'],'--no-pub','--dart-define=BECHI_SIMULATOR_DECODER_ONLY=true','--timeout','5m' if providers else '2m']
 if not providers:command.append('--verbose')
 if providers:
     assert re.fullmatch('[A-Za-z0-9_-]{40,100}',os.environ.get('BECHI_QA_TOKEN','')), 'A normal temporary QA session is required'
     os.environ['SIMCTL_CHILD_BECHI_QA_TOKEN']=os.environ['BECHI_QA_TOKEN']
+    # Also set launchd's runtime environment: no test identity is baked into
+    # the application, assets or release IPA. The simulator is job-local.
+    injected=subprocess.run(['xcrun','simctl','spawn',os.environ['BECHI_SIMULATOR'],'launchctl','setenv','BECHI_QA_TOKEN',os.environ['BECHI_QA_TOKEN']],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    if injected.returncode:raise RuntimeError('Could not set the temporary simulator QA environment.')
 
 def safe(value):
     if providers:
@@ -24,6 +28,9 @@ with (folder/'flutter-test.log').open('w') as log:
         try:process.wait(timeout=20)
         except subprocess.TimeoutExpired:os.killpg(process.pid,signal.SIGKILL)
         code=124
+    finally:
+        if providers:
+            subprocess.run(['xcrun','simctl','spawn',os.environ['BECHI_SIMULATOR'],'launchctl','unsetenv','BECHI_QA_TOKEN'],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 if providers:
     path=folder/'flutter-test.log'
     path.write_text(safe(path.read_text(errors='replace')))
@@ -35,6 +42,7 @@ def capture(name,args):
     (folder/name).write_text(safe(value))
 
 capture('devices.json',['xcrun','simctl','list','devices','available','--json'])
+capture('host-audio.json',['system_profiler','SPAudioDataType','-json'])
 capture('runner-system.log',['xcrun','simctl','spawn',os.environ['BECHI_SIMULATOR'],'log','show','--last','3m','--style','compact','--predicate','process == "Runner"'])
 capture('runner-dependencies.txt',['otool','-L','build/ios/iphonesimulator/Runner.app/Runner'])
 for name in pathlib.Path.home().joinpath('Library/Logs/DiagnosticReports').glob('Runner*'):
@@ -53,6 +61,6 @@ expected=16 if providers else 11
 if code==0 and (len(results)!=expected or any(row.get('passed') is not True for row in results.values())):
     print('Native run did not return a passing result for every expected case.')
     code=1
-(folder/'results.json').write_text(json.dumps({'exit':code,'results':list(results.values())},indent=2))
+(folder/'results.json').write_text(json.dumps({'exit':code,'audio_scope':'real decoding, simulator virtual output; audible device output needs physical hardware','results':list(results.values())},indent=2))
 print('\n'.join(lines[-140:]))
 sys.exit(code)
