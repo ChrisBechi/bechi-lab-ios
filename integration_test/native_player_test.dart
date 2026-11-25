@@ -15,6 +15,19 @@ const simulatorDecoderOnly = bool.fromEnvironment(
   'BECHI_SIMULATOR_DECODER_ONLY',
 );
 const simulatorTestChannel = MethodChannel('app.bechiflix.native/test');
+const expectedCodecs = {
+  'codec-avi': ('mpeg4', 'mp3'),
+  'codec-hevc': ('hevc', 'eac3'),
+  'codec-mp4': ('h264', 'aac'),
+  'codec-mkv': ('h264', 'ac3'),
+  'codec-webm': ('vp9', 'opus'),
+  'codec-mov': ('h264', 'pcm_s16le'),
+  'codec-ts': ('h264', 'aac'),
+  'codec-flv': ('flv1', 'mp3'),
+  'codec-wmv': ('wmv2', 'wmav2'),
+  'codec-mpeg': ('mpeg2video', 'mp2'),
+  'codec-dts': ('h264', 'dts'),
+};
 Future<void> prepareDiagnosticPlayer(Player player) async {
   if (!simulatorDecoderOnly) return;
   final context = await simulatorTestChannel.invokeMapMethod<String, dynamic>(
@@ -138,13 +151,23 @@ void main() {
           final native = player.platform as NativePlayer;
           expect(await native.getProperty('tls-verify'), 'yes');
           expect(await native.getProperty('hls-bitrate'), 'max');
-          final videoCodec = await native.getProperty('video-codec');
+          // Current mpv versions expose codec names on track-list. The old
+          // video-codec property can be absent even while decoding correctly.
+          final videoCodec = player.state.tracks.video
+              .where((t) => t.id != 'no' && t.id != 'auto')
+              .first
+              .codec;
           final audioCodec = player.state.tracks.audio
               .where((t) => t.id != 'no' && t.id != 'auto')
               .first
               .codec;
-          expect(videoCodec, isNotEmpty);
-          expect(audioCodec, isNotEmpty);
+          final expected = expectedCodecs[source.id]!;
+          expect(videoCodec, expected.$1);
+          expect(audioCodec, expected.$2);
+          await tester.runAsync(
+            () => key.currentState!.controller.waitUntilFirstFrameRendered
+                .timeout(const Duration(seconds: 5)),
+          );
           expect(player.state.audioParams.channelCount, greaterThan(0));
           final audioOutputRate = int.tryParse(
             await native.getProperty('audio-out-params/samplerate'),
