@@ -196,7 +196,7 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.text('Abrir teste'), findsOneWidget);
         } finally {
-          if (outcome['passed'] != true)
+          if (outcome['passed'] != true) {
             outcome.addAll({
               'error': key.currentState?.error ?? 'Native codec check failed.',
               'width': player.state.width,
@@ -204,6 +204,7 @@ void main() {
               'audio_sample_rate': player.state.audioParams.sampleRate,
               'engine_errors': errors,
             });
+          }
           await sub.cancel();
           // Remove every route even after an assertion so a previous decoder
           // cannot keep rendering or hold audio resources in the next test.
