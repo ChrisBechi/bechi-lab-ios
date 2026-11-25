@@ -59,6 +59,7 @@ jobs:
       - run: flutter test
       - run: node --test test/hosted_source.test.mjs
       - name: Start an available iPhone simulator
+        id: simulator
         shell: bash
         run: |
           DEVICE_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(v["udid"] for k,rows in d["devices"].items() if "iOS" in k for v in rows if v["isAvailable"] and "iPhone" in v["name"]))')
@@ -69,7 +70,7 @@ jobs:
         timeout-minutes: 17
         run: python3 ci/native_test.py
       - name: Test real providers separately
-        if: inputs.providers
+        if: ${{ !cancelled() && inputs.providers && steps.simulator.outcome == 'success' }}
         continue-on-error: true
         timeout-minutes: 68
         env:

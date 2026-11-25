@@ -142,20 +142,24 @@ class BechiApi {
       throw const ApiFailure('PATH', 'Requisição inválida.');
     }
     if (transport != null) return transport!(method, path, body, scope);
-    final request = await _http.openUrl(
-      method,
-      Uri.parse('$bechiOrigin/api/v1/$path'),
-    );
-    request.followRedirects = false;
-    request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    request.headers.set('Origin', bechiOrigin);
-    if (_cookie != null) request.cookies.add(Cookie('cine_device', _cookie!));
-    if (body != null) {
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode(body));
-    }
-    final unbind = scope?.listen(() => request.abort());
+    HttpClientRequest? active;
+    void Function()? unbind;
     try {
+      final request = await _http.openUrl(
+        method,
+        Uri.parse('$bechiOrigin/api/v1/$path'),
+      );
+      active = request;
+      request.followRedirects = false;
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      request.headers.set('Origin', bechiOrigin);
+      if (_cookie != null) request.cookies.add(Cookie('cine_device', _cookie!));
+      if (body != null) {
+        request.headers.contentType = ContentType.json;
+        request.write(jsonEncode(body));
+      }
+      unbind = scope?.listen(() => request.abort());
+      scope?.check();
       final response = await request.close().timeout(timeout);
       for (final cookie in response.cookies) {
         if (cookie.name == 'cine_device' &&
@@ -164,7 +168,7 @@ class BechiApi {
         }
       }
       if (method == 'HEAD') {
-        await response.drain<void>();
+        await response.timeout(timeout).drain<void>();
         scope?.check();
         if (response.statusCode < 200 || response.statusCode >= 300) {
           throw ApiFailure(
@@ -178,7 +182,7 @@ class BechiApi {
         };
       }
       final bytes = <int>[];
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(timeout)) {
         bytes.addAll(chunk);
         if (bytes.length > 16 * 1024 * 1024) {
           throw const ApiFailure('SIZE', 'A resposta excedeu o limite do app.');
@@ -201,6 +205,7 @@ class BechiApi {
       }
       return value;
     } on TimeoutException {
+      active?.abort();
       throw const ApiFailure(
         'TIMEOUT',
         'O servidor demorou a responder. Tente novamente.',
@@ -210,6 +215,11 @@ class BechiApi {
       throw const ApiFailure(
         'NETWORK',
         'Não foi possível conectar ao servidor.',
+      );
+    } on HandshakeException {
+      throw const ApiFailure(
+        'NETWORK_TLS',
+        'Não foi possível validar a conexão segura com o servidor.',
       );
     } on HttpException {
       scope?.check();

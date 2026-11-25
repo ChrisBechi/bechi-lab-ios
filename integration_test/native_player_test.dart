@@ -61,126 +61,159 @@ void main() {
           (e) => errors.add(e.replaceAll(RegExp(r'https?://\S+'), '[media]')),
         );
         final key = GlobalKey<NativePlayerPageState>();
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: ThemeData.dark(),
-            home: Builder(
-              builder: (context) => Scaffold(
-                body: FilledButton(
-                  onPressed: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => NativePlayerPage(
-                        key: key,
-                        api: api,
-                        source: source,
-                        player: player,
+        final outcome = <String, dynamic>{'source': source.id, 'passed': false};
+        try {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: ThemeData.dark(),
+              home: Builder(
+                builder: (context) => Scaffold(
+                  body: FilledButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => NativePlayerPage(
+                          key: key,
+                          api: api,
+                          source: source,
+                          player: player,
+                        ),
                       ),
                     ),
+                    child: const Text('Abrir teste'),
                   ),
-                  child: const Text('Abrir teste'),
                 ),
               ),
             ),
-          ),
-        );
-        await tester.tap(find.text('Abrir teste'));
-        await tester.pump(const Duration(milliseconds: 500));
-        await until(
-          tester,
-          () =>
-              player.state.width == 320 &&
-              player.state.position.inMilliseconds > 200,
-        );
-        expect(player.state.height, 180);
-        expect(
-          player.state.tracks.audio.where(
-            (t) => t.id != 'no' && t.id != 'auto',
-          ),
-          isNotEmpty,
-        );
-        final native = player.platform as NativePlayer;
-        expect(await native.getProperty('tls-verify'), 'yes');
-        expect(await native.getProperty('hls-bitrate'), 'max');
-        final videoCodec = await native.getProperty('video-codec');
-        final audioCodec = await native.getProperty('audio-codec-name');
-        expect(videoCodec, isNotEmpty);
-        expect(audioCodec, isNotEmpty);
-        await key.currentState!.player.pause();
-        await tester.pump();
-        final paused = player.state.position;
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 350)),
-        );
-        await tester.pump();
-        expect(
-          (player.state.position - paused).inMilliseconds.abs(),
-          lessThan(250),
-        );
-        await key.currentState!.seek(const Duration(seconds: 3));
-        await until(tester, () => player.state.position.inMilliseconds >= 2500);
-        await key.currentState!.seek(const Duration(seconds: 1));
-        await until(tester, () => player.state.position.inMilliseconds < 2000);
-        await key.currentState!.player.play();
-        await until(tester, () => player.state.playing);
-        if (!key.currentState!.controls) {
-          await tester.tap(find.byKey(const Key('native-video')));
-          await tester.pump();
-        }
-        await tester.tap(find.byKey(const Key('player-audio')));
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(find.text('Áudio'), findsOneWidget);
-        Navigator.of(tester.element(find.text('Áudio'))).pop();
-        await tester.pump(const Duration(milliseconds: 400));
-        await tester.tap(find.byKey(const Key('player-subtitles')));
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(find.text('Legendas'), findsOneWidget);
-        expect(find.text('Desativadas'), findsOneWidget);
-        if (source.id == 'codec-hevc') {
-          final audio = player.state.tracks.audio
-              .where((t) => t.language == 'por')
-              .first;
-          await player.setAudioTrack(audio);
-          expect(player.state.track.audio.id, audio.id);
-          final subtitle = player.state.tracks.subtitle
-              .where((t) => t.language == 'por')
-              .first;
-          await player.setSubtitleTrack(subtitle);
+          );
+          await tester.tap(find.text('Abrir teste'));
+          await tester.pump(const Duration(milliseconds: 500));
           await until(
             tester,
-            () => player.state.subtitle.any(
-              (v) => v.contains('Teste de legenda'),
-            ),
+            () =>
+                key.currentState?.error != null ||
+                player.state.width == 320 &&
+                    player.state.position.inMilliseconds > 200 &&
+                    (player.state.audioParams.sampleRate ?? 0) > 0,
           );
+          expect(key.currentState!.error, isNull);
+          expect(player.state.height, 180);
+          expect(
+            player.state.tracks.audio.where(
+              (t) => t.id != 'no' && t.id != 'auto',
+            ),
+            isNotEmpty,
+          );
+          final native = player.platform as NativePlayer;
+          expect(await native.getProperty('tls-verify'), 'yes');
+          expect(await native.getProperty('hls-bitrate'), 'max');
+          final videoCodec = await native.getProperty('video-codec');
+          final audioCodec = player.state.tracks.audio
+              .where((t) => t.id != 'no' && t.id != 'auto')
+              .first
+              .codec;
+          expect(videoCodec, isNotEmpty);
+          expect(audioCodec, isNotEmpty);
+          expect(player.state.audioParams.channelCount, greaterThan(0));
+          final audioOutputRate = int.tryParse(
+            await native.getProperty('audio-out-params/samplerate'),
+          );
+          expect(audioOutputRate, greaterThan(0));
+          await key.currentState!.player.pause();
+          await tester.pump();
+          final paused = player.state.position;
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 350)),
+          );
+          await tester.pump();
+          expect(
+            (player.state.position - paused).inMilliseconds.abs(),
+            lessThan(250),
+          );
+          await key.currentState!.seek(const Duration(seconds: 3));
+          await until(
+            tester,
+            () => player.state.position.inMilliseconds >= 2500,
+          );
+          await key.currentState!.seek(const Duration(seconds: 1));
+          await until(
+            tester,
+            () => player.state.position.inMilliseconds < 2000,
+          );
+          await key.currentState!.player.play();
+          await until(tester, () => player.state.playing);
+          if (!key.currentState!.controls) {
+            await tester.tap(find.byKey(const Key('native-video')));
+            await tester.pump();
+          }
+          await tester.tap(find.byKey(const Key('player-audio')));
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(find.text('Áudio'), findsOneWidget);
+          Navigator.of(tester.element(find.text('Áudio'))).pop();
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.tap(find.byKey(const Key('player-subtitles')));
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(find.text('Legendas'), findsOneWidget);
+          expect(find.text('Desativadas'), findsOneWidget);
+          if (source.id == 'codec-hevc') {
+            final audio = player.state.tracks.audio
+                .where((t) => t.language == 'por')
+                .first;
+            await player.setAudioTrack(audio);
+            expect(player.state.track.audio.id, audio.id);
+            final subtitle = player.state.tracks.subtitle
+                .where((t) => t.language == 'por')
+                .first;
+            await player.setSubtitleTrack(subtitle);
+            await until(
+              tester,
+              () => player.state.subtitle.any(
+                (v) => v.contains('Teste de legenda'),
+              ),
+            );
+          }
+          Navigator.of(tester.element(find.text('Legendas'))).pop();
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(tester.takeException(), isNull);
+          expect(errors, isEmpty);
+          outcome.addAll({
+            'passed': true,
+            'video': '320x180',
+            'video_codec': videoCodec,
+            'audio_codec': audioCodec,
+            'audio_sample_rate': player.state.audioParams.sampleRate,
+            'audio_output_sample_rate': audioOutputRate,
+            'audio': true,
+            'pause': true,
+            'seek_forward': true,
+            'seek_back': true,
+            'menus': true,
+            'engine': 'native libmpv',
+            'first_frame_ms': key.currentState!.firstFrameMs,
+          });
+          final leaving = key.currentState!.leave();
+          await until(tester, () => key.currentState == null);
+          await leaving;
+          await tester.pumpAndSettle();
+          expect(find.text('Abrir teste'), findsOneWidget);
+        } finally {
+          if (outcome['passed'] != true)
+            outcome.addAll({
+              'error': key.currentState?.error ?? 'Native codec check failed.',
+              'width': player.state.width,
+              'clock_ms': player.state.position.inMilliseconds,
+              'audio_sample_rate': player.state.audioParams.sampleRate,
+              'engine_errors': errors,
+            });
+          await sub.cancel();
+          // Remove every route even after an assertion so a previous decoder
+          // cannot keep rendering or hold audio resources in the next test.
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pump();
+          api.dispose();
+          binding.reportData ??= {};
+          binding.reportData![source.id] = outcome;
+          debugPrint('NATIVE_CODEC_RESULT ${jsonEncode(outcome)}');
         }
-        Navigator.of(tester.element(find.text('Legendas'))).pop();
-        await tester.pump(const Duration(milliseconds: 400));
-        expect(tester.takeException(), isNull);
-        expect(errors, isEmpty);
-        binding.reportData ??= {};
-        binding.reportData![source.id] = {
-          'source': source.id,
-          'passed': true,
-          'video': '320x180',
-          'video_codec': videoCodec,
-          'audio_codec': audioCodec,
-          'audio': true,
-          'pause': true,
-          'seek_forward': true,
-          'seek_back': true,
-          'menus': true,
-          'engine': 'native libmpv',
-          'first_frame_ms': key.currentState!.firstFrameMs,
-        };
-        debugPrint(
-          'NATIVE_CODEC_RESULT ${jsonEncode(binding.reportData![source.id])}',
-        );
-        await sub.cancel();
-        final leaving = key.currentState!.leave();
-        await until(tester, () => key.currentState == null);
-        await leaving;
-        await tester.pumpAndSettle();
-        expect(find.text('Abrir teste'), findsOneWidget);
-        api.dispose();
       },
     );
   }
