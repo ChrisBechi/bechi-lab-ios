@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
 import 'bechi_api.dart';
@@ -45,8 +46,20 @@ Future<void> configureNativeEngine(Player player) async {
   if (Platform.isIOS) {
     final lease = _audioLeases.putIfAbsent(player, _audioLease);
     try {
-      await _audioChannel.invokeMethod<dynamic>('activate', {'lease': lease});
-    } on PlatformException {
+      final output = await _audioChannel.invokeMethod<dynamic>('activate', {
+        'lease': lease,
+      });
+      if (kDebugMode && output is Map) {
+        debugPrint(
+          'NATIVE_AUDIO_OUTPUT rate=${output['sample_rate']} channels=${output['output_channels']}',
+        );
+      }
+    } on PlatformException catch (error) {
+      if (kDebugMode) {
+        debugPrint(
+          'NATIVE_AUDIO_SESSION_ERROR code=${error.code} os_code=${error.details is num ? error.details : 'unavailable'}',
+        );
+      }
       throw const ApiFailure(
         'AUDIO_SESSION',
         'Não foi possível ativar a saída de áudio.',

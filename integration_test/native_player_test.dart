@@ -54,9 +54,19 @@ void main() {
             player = Player(
               configuration: const PlayerConfiguration(
                 bufferSize: 16 * 1024 * 1024,
+                logLevel: MPVLogLevel.debug,
               ),
             );
         final errors = <String>[];
+        final audioLog = <String>[];
+        final audioSub = player.stream.log.listen((event) {
+          if (event.prefix.startsWith('ao') || event.prefix.startsWith('ad/')) {
+            if (audioLog.length >= 30) audioLog.removeAt(0);
+            audioLog.add(
+              '${event.prefix}: ${event.text.replaceAll(RegExp(r'https?://\S+'), '[media]').trim()}',
+            );
+          }
+        });
         final sub = player.stream.error.listen(
           (e) => errors.add(e.replaceAll(RegExp(r'https?://\S+'), '[media]')),
         );
@@ -203,9 +213,11 @@ void main() {
               'clock_ms': player.state.position.inMilliseconds,
               'audio_sample_rate': player.state.audioParams.sampleRate,
               'engine_errors': errors,
+              'audio_log': audioLog,
             });
           }
           await sub.cancel();
+          await audioSub.cancel();
           // Remove every route even after an assertion so a previous decoder
           // cannot keep rendering or hold audio resources in the next test.
           await tester.pumpWidget(const SizedBox.shrink());

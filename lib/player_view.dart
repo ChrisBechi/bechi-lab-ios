@@ -290,7 +290,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
         ),
       ),
     );
-    if (picked == null || !mounted || closing) return;
+    if (!mounted || closing) return;
+    if (picked == null) {
+      scheduleHide();
+      return;
+    }
     final u = Uri.tryParse('${picked['url']}');
     if (u == null || !session.acceptsMediaUri(u)) return;
     setState(() => busy = true);
@@ -427,6 +431,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     if (id != null && mounted) {
       await changeEpisode(id);
     }
+    if (mounted && !closing) scheduleHide();
   }
 
   static String time(Duration duration) {
