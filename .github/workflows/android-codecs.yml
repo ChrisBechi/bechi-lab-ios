@@ -6,13 +6,19 @@ on:
         type: boolean
         default: false
         description: Exercise the native decoder and controls in an Android emulator
+      artifact_run:
+        type: string
+        default: ''
+        description: Optional existing build run for emulator-only diagnostics
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: android-codec-diagnostic
   cancel-in-progress: true
 jobs:
   android:
+    if: inputs.artifact_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -62,7 +68,7 @@ jobs:
             dist/Bechi-Codec-Checks-0.2.0.apk
             dist/SHA256-Android.txt
   emulator:
-    if: inputs.emulator
+    if: ${{ always() && inputs.emulator && (needs.android.result == 'success' || (needs.android.result == 'skipped' && inputs.artifact_run != '')) }}
     needs: android
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -74,11 +80,16 @@ jobs:
         with:
           name: Bechi-Android-Codecs
           path: dist
+          run-id: ${{ inputs.artifact_run || github.run_id }}
+          github-token: ${{ github.token }}
       - name: Verify the APKs from this build
         working-directory: dist
         run: sha256sum --check SHA256-Android.txt
       - name: Prepare an isolated official Android image
         run: |
+          export ANDROID_AVD_HOME="$RUNNER_TEMP/bechi-avds"
+          mkdir -p "$ANDROID_AVD_HOME"
+          echo "ANDROID_AVD_HOME=$ANDROID_AVD_HOME" >> "$GITHUB_ENV"
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'system-images;android-35;google_apis;x86_64'
           echo no | "$ANDROID_HOME/cmdline-tools/latest/bin/avdmanager" create avd --force --name bechi-native --package 'system-images;android-35;google_apis;x86_64' --device pixel_2
           sudo chmod a+rw /dev/kvm
