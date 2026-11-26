@@ -37,5 +37,6 @@ flutter:
     - assets/fixtures/native-h264-dts.mkv
     - assets/certificates/cacert.pem
     - assets/hosted_source.js
+    - assets/android_hosted_bridge.js
     - assets/build_info.json
     - THIRD_PARTY_NOTICES.txt

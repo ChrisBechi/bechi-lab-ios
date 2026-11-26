@@ -105,7 +105,7 @@
     sent = target.epoch; post('ready', {url: variants[0].url, variants, title: name, format: target.kind === 'c7' || variants[0].type === 'mp4' ? 'mp4' : 'hls'});
   }
   window.__bechiConfigureHosted = next => { target = window.__bechiHostedTarget = next; prepared = sent = ''; providerAddresses.clear(); busy = false; human = false; failed = false; void inspect(); };
-  window.__bechiReadHosted = async (url, range) => {
+  window.__bechiReadHosted = async (url, range, binary = false) => {
     if (!playerPage() || !allowedMedia(url) || sent !== target.epoch || range && !/^bytes=\d+-\d*$/.test(range)) throw Error('SOURCE_READ');
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 25000);
     try {
@@ -114,6 +114,7 @@
       const reader = response.body?.getReader(), chunks = []; let length = 0;
       if (reader) try { for (;;) { const part = await reader.read(); if (part.done) break; if ((length += part.value.length) > 16777216) throw Error('SOURCE_SIZE'); chunks.push(part.value); } } finally { await reader.cancel(); }
       const bytes = new Uint8Array(length); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      if (binary) return {status: response.status, type: response.headers.get('content-type'), range: response.headers.get('content-range'), data: bytes.buffer};
       let text = ''; for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768));
       return {status: response.status, type: response.headers.get('content-type'), range: response.headers.get('content-range'), data: btoa(text)};
     } finally { clearTimeout(timer); }

@@ -3,7 +3,7 @@
 Player com interface e controles próprios em Flutter. A decodificação usa
 libmpv/FFmpeg nativos pelo media_kit, com textura GPU. O alvo é iOS ARM64.
 
-SuperFlix e C7 possuem um adaptador WebKit privado para preparar a origem e
+SuperFlix e C7 possuem adaptadores privados Swift/WebKit no iOS e Kotlin/WebView no Android para preparar a origem e
 entregar seus trechos ao motor nativo. Ele escolhe o principal e mantém a sessão
 na troca de episódio, como na TV. A confirmação oficial só é apresentada quando
 há uma caixa humana disponível. A pessoa toca na própria confirmação; não há
@@ -68,5 +68,11 @@ Fontes das bibliotecas e avisos estão em THIRD_PARTY_NOTICES.txt.
 O alvo `lib/codec_debug.dart` permite testar os mesmos 11 vídeos sintéticos sem
 conta e sem rede no Android. O APK de depuração usa um identificador separado,
 `app.bechiflix.codecdebug`. Drive e demais fontes diretas também podem ser
-conferidos pelo login normal. Os conectores privados SuperFlix/C7 desta versão
-usam Swift/WebKit e são validados no iPhone; o teste Android não os substitui.
+conferidos pelo login normal. Os conectores privados SuperFlix/C7 usam a mesma
+interface e transporte local nas duas plataformas. No Android, AndroidX WebKit
+restringe a comunicação às origens permitidas, valida a origem real de cada
+frame e transfere os trechos como buffers binários quando disponível. A janela
+da fonte fica em segundo plano e só recebe foco durante uma confirmação humana.
+Nova aba, popup e navegação externa são bloqueados. Não há dependência de navegador,
+extensão ou computador para essa preparação. Os testes finais são feitos em cada
+plataforma; a confirmação no Android não substitui a conferência do iPhone.

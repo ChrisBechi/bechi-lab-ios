@@ -73,7 +73,7 @@ class _CodecsState extends State<_Codecs> {
           child: const Text('Entrar para testar as fontes da conta'),
         ),
         const Text(
-          'SuperFlix e C7 usam o conector específico de iOS nesta versão. A validação final dessas fontes será feita no iPhone.',
+          'SuperFlix e C7 usam um conector próprio do aplicativo. Se a origem pedir confirmação humana, ela será apresentada aqui.',
           style: TextStyle(fontSize: 12),
         ),
       ],

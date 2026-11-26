@@ -195,6 +195,10 @@ class HostedSource {
     final script = await rootBundle.loadString('assets/hosted_source.js');
     final result = await _invoke('prepare', {
       'script': script,
+      if (Platform.isAndroid)
+        'bridge': await rootBundle.loadString(
+          'assets/android_hosted_bridge.js',
+        ),
       'url': url,
       'kind': kind,
       'expectedTitle': title,

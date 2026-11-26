@@ -21,6 +21,8 @@ jobs:
     if: inputs.artifact_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 40
+    env:
+      BECHI_ANDROID_TARGETS: ${{ inputs.emulator && 'android-arm64,android-x64' || 'android-arm64' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,7 +49,8 @@ jobs:
       - run: flutter pub get --enforce-lockfile
       - run: flutter analyze --fatal-infos
       - run: flutter test
-      - run: flutter build apk --debug --target lib/codec_debug.dart
+      - run: node --test test/hosted_source.test.mjs test/android_hosted_bridge.test.mjs
+      - run: flutter build apk --debug --target lib/codec_debug.dart --target-platform "$BECHI_ANDROID_TARGETS"
       - name: Package diagnostic
         run: |
           mkdir -p dist
@@ -56,7 +59,7 @@ jobs:
         env:
           BECHI_CODEC_TESTS: '1'
         run: |
-          flutter build apk --debug --target integration_test/native_player_test.dart
+          flutter build apk --debug --target integration_test/native_player_test.dart --target-platform "$BECHI_ANDROID_TARGETS"
           cp build/app/outputs/flutter-apk/app-debug.apk dist/Bechi-Codec-Checks-0.2.0.apk
           cd dist
           sha256sum Bechi-Codecs-0.2.0.apk Bechi-Codec-Checks-0.2.0.apk > SHA256-Android.txt

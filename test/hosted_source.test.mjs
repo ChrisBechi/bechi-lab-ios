@@ -30,6 +30,14 @@ test('C7 exports media metadata for native playback',async()=>{
 test('provider fragment metadata stays in its origin and the native transport receives only the network URL',async()=>{
  const r=run({kind:'c7',host:'abyssplayer.com',path:'/iwBlab3Rj',media:'https://media.example/own.mp4#own-provider-metadata'});await new Promise(resolve=>setTimeout(resolve,20));const ready=r.messages.find(m=>m.type==='ready');assert.equal(ready.url,'https://media.example/own.mp4');assert.equal(ready.variants[0].url,ready.url);await r.window.__bechiReadHosted(ready.url,'bytes=0-9');assert.equal(r.requests.at(-1).url,'https://media.example/own.mp4#own-provider-metadata');
 });
+test('Android native reads transfer binary buffers while retaining provider metadata in its document',async()=>{
+ const r=run({kind:'c7',host:'abyssplayer.com',path:'/iwBlab3Rj',media:'https://media.example/own.mp4#own-provider-metadata'});
+ await new Promise(resolve=>setTimeout(resolve,20));
+ const ready=r.messages.find(m=>m.type==='ready');
+ const sample=await r.window.__bechiReadHosted(ready.url,'bytes=0-9',true);
+ assert(sample.data instanceof ArrayBuffer);assert(sample.data.byteLength>0);
+ assert.equal(r.requests.at(-1).url,'https://media.example/own.mp4#own-provider-metadata');
+});
 test('a synthetic human checkbox is observed and never clicked by the adapter',async()=>{
  const r=run({host:'challenges.cloudflare.com',path:'/own-fixture',checkbox:true});await new Promise(resolve=>setTimeout(resolve,20));assert(r.messages.some(m=>m.type==='human'));assert.equal(r.clicks.length,0);assert.equal(r.requests.length,0);
 });
