@@ -6,6 +6,9 @@ folder=pathlib.Path('native-diagnostics/providers' if providers else 'native-dia
 target='provider_flow_test.dart' if providers else 'native_player_test.dart'
 command=['flutter','test','integration_test/'+target,'-d',os.environ['BECHI_SIMULATOR'],'--no-pub','--dart-define=BECHI_SIMULATOR_DECODER_ONLY=true','--timeout','5m' if providers else '2m']
 if not providers:command.append('--verbose')
+hosted_cases = ('superflix-telefonistas', 'superflix-sereias', 'c7') if providers and os.environ.get('BECHI_PROVIDER_GROUP') == 'hosted' else ()
+if hosted_cases:
+    command.append('--dart-define=BECHI_PROVIDER_CASES=' + '|'.join(hosted_cases))
 if providers:
     assert re.fullmatch('[A-Za-z0-9_-]{40,100}',os.environ.get('BECHI_QA_TOKEN','')), 'A normal temporary QA session is required'
     os.environ['SIMCTL_CHILD_BECHI_QA_TOKEN']=os.environ['BECHI_QA_TOKEN']
@@ -57,8 +60,8 @@ for line in lines:
         try:
             result=json.loads(match.group(1));results[result['source']]=result
         except (ValueError,KeyError):pass
-expected=16 if providers else 11
-if code==0 and (len(results)!=expected or any(row.get('passed') is not True for row in results.values())):
+expected=(len(hosted_cases) or 16) if providers else 11
+if code==0 and (len(results)!=expected or hosted_cases and set(results)!=set(hosted_cases) or any(row.get('passed') is not True for row in results.values())):
     print('Native run did not return a passing result for every expected case.')
     code=1
 (folder/'results.json').write_text(json.dumps({'exit':code,'audio_scope':'real decoding, simulator virtual output; audible device output needs physical hardware','results':list(results.values())},indent=2))

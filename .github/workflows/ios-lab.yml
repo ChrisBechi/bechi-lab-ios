@@ -10,6 +10,11 @@ on:
         type: boolean
         default: false
         description: Test real providers with a temporary QA session
+      provider_group:
+        type: choice
+        default: all
+        options: [all, hosted]
+        description: Providers to exercise when real-source testing is enabled
       runner:
         type: choice
         default: macos-15
@@ -87,6 +92,7 @@ jobs:
         timeout-minutes: 68
         env:
           BECHI_QA_TOKEN: ${{ secrets.BECHI_NATIVE_QA_SESSION }}
+          BECHI_PROVIDER_GROUP: ${{ inputs.provider_group }}
         run: python3 ci/native_test.py --providers
       - uses: actions/upload-artifact@v4
         if: always()

@@ -69,6 +69,10 @@ class HostedSource {
         'SOURCE_DNS' => 'A rede não conseguiu localizar o endereço da fonte.',
         'SOURCE_CONNECTION' => 'Não foi possível conectar à fonte de vídeo.',
         'SOURCE_TLS' => 'A conexão segura com a fonte falhou.',
+        'SOURCE_ACCESS' => 'A fonte recusou o acesso ao episódio.',
+        'SOURCE_NOT_FOUND' => 'O episódio não está disponível nesta fonte.',
+        'SOURCE_UNAVAILABLE' =>
+          'A fonte está indisponível. Tente novamente em instantes.',
         'SOURCE_TIMEOUT' => 'A fonte demorou a responder. Tente novamente.',
         _ => 'A fonte não concluiu a preparação. Tente novamente.',
       });

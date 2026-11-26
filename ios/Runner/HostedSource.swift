@@ -64,6 +64,9 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       // Preserve the provider's own WK data store; never import browser cookies.
       if let rootFrame = retainedFrame {
         view.callAsyncJavaScript("window.__bechiConfigureHosted(config)", arguments: ["config": config], in: rootFrame, in: .page) { _ in }
+      } else if kind == "c7" {
+        // This is the canonical player URL returned for the requested episode.
+        view.load(URLRequest(url: url))
       } else {
         var shell = URLComponents(string: origin + "/native-source-shell.html")!
         shell.fragment = root
@@ -179,15 +182,58 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     guard navigationAction.targetFrame != nil, let url = navigationAction.request.url else { decisionHandler(.cancel); return }
     if url.absoluteString == "about:blank" { decisionHandler(.allow); return }
     guard url.scheme == "https", url.user == nil, url.password == nil, url.port == nil, let host = url.host else { decisionHandler(.cancel); return }
-    if navigationAction.targetFrame?.isMainFrame == true { decisionHandler(host == URL(string: origin)?.host && url.path == "/native-source-shell.html" && url.query == nil ? .allow : .cancel); return }
+    if navigationAction.targetFrame?.isMainFrame == true {
+      let shell = host == URL(string: origin)?.host && url.path == "/native-source-shell.html" && url.query == nil
+      decisionHandler(shell || isC7Document(url) ? .allow : .cancel)
+      return
+    }
     let allowed = host == "challenges.cloudflare.com" || host == "superflixapi.boats" && (url.path.hasPrefix("/serie/") || url.path.hasPrefix("/filme/") || url.path.hasPrefix("/player/redirect") || url.path.hasPrefix("/cdn-cgi/")) || players.contains(host) && url.path.range(of: "^/video/[a-f0-9]{32}$", options: .regularExpression) != nil || target["kind"] as? String == "c7" && url.absoluteString == target["url"] as? String
     decisionHandler(allowed ? .allow : .cancel)
+  }
+  private func isC7Document(_ url: URL) -> Bool {
+    guard target["kind"] as? String == "c7", let expected = target["url"] as? String,
+          let permitted = URL(string: expected), url.scheme == "https", url.host == permitted.host,
+          url.port == nil, url.user == nil, url.password == nil else { return false }
+    return url.path == permitted.path
+  }
+  func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+               decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+    guard pending != nil, let response = navigationResponse.response as? HTTPURLResponse,
+          let url = response.url else { decisionHandler(.allow); return }
+    let canonical = "https://" + (url.host ?? "") + url.path
+    let source = isC7Document(url) || canonical == target["root"] as? String || canonical == target["url"] as? String
+    guard source else { decisionHandler(.allow); return }
+    diagnostic("source_response", ["status": response.statusCode])
+    let challenge = response.value(forHTTPHeaderField: "cf-mitigated")?.lowercased() == "challenge"
+    if challenge {
+      // The real widget requests interaction separately if a tap is required.
+      decisionHandler(.allow)
+      return
+    }
+    switch response.statusCode {
+    case 401, 403, 404, 410, 451, 429, 500...599:
+      decisionHandler(.cancel)
+      let code: String
+      switch response.statusCode {
+      case 401, 403, 451: code = "SOURCE_ACCESS"
+      case 404, 410: code = "SOURCE_NOT_FOUND"
+      default: code = "SOURCE_UNAVAILABLE"
+      }
+      finishFailure(code)
+    default: decisionHandler(.allow)
+    }
   }
   func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
     let code = (error as NSError).code
     diagnostic("navigation_failure", ["os_code": code])
-    if code != NSURLErrorCancelled { finishFailure("SOURCE_CONNECTION") }
+    switch code {
+    case NSURLErrorCancelled: break
+    case NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed: finishFailure("SOURCE_DNS")
+    case NSURLErrorTimedOut: finishFailure("SOURCE_TIMEOUT")
+    case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted: finishFailure("SOURCE_TLS")
+    default: finishFailure("SOURCE_CONNECTION")
+    }
   }
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { diagnostic("shell_loaded") }
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { finishFailure("SOURCE_PROCESS") }

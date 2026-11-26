@@ -70,7 +70,6 @@
     if (rootPage() && !busy && !failed && prepared !== target.epoch) {
       if (!target.movie && typeof window.renderEpisodes !== 'function' || target.movie && typeof window.fetchBootstrapOptions !== 'function') return;
       const requested = target;
-      if (document.documentElement) document.documentElement.style.visibility = 'hidden';
       post('validated'); protect(); busy = true;
       try {
         if (!target.movie) {
