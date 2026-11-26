@@ -57,6 +57,12 @@ class HostedSource {
   int _cacheBytes = 0;
   final _verifiedHosts = <String, DateTime>{};
   bool _closed = false;
+  bool canShowSource = false;
+  Future<void> showSource() async {
+    if (canShowSource && !_closed) {
+      await _invoke('showSource', {'epoch': _epoch});
+    }
+  }
 
   static Future<Map<String, dynamic>?> _platform(
     String method,
@@ -176,6 +182,7 @@ class HostedSource {
     await _server?.close(force: true);
     _server = null;
     _closed = false;
+    canShowSource = false;
     _listeners.remove(_epoch);
     _epoch = _uuid();
     if (!_callbacks) {
@@ -183,38 +190,52 @@ class HostedSource {
       _channel.setMethodCallHandler((call) async {
         final args = jsonMap(call.arguments);
         if (call.method == 'phase') {
-          _listeners[args['epoch']]?.call(
-            args['phase'] == 'human'
-                ? 'Confirmação humana necessária na fonte.'
-                : 'Preparando o episódio…',
-          );
+          _listeners[args['epoch']]?.call(args['phase'] as String? ?? '');
         } else if (call.method == 'diagnostic' && kDebugMode) {
           debugPrint('NATIVE_HOSTED_DIAGNOSTIC ${jsonEncode(args)}');
         }
       });
     }
-    if (onStatus != null) _listeners[_epoch] = onStatus!;
+    _listeners[_epoch] = (phase) {
+      canShowSource = phase == 'waiting';
+      onStatus?.call(switch (phase) {
+        'waiting' => 'Aguardando a fonte liberar o vídeo…',
+        'human' => 'Confirmação humana necessária na fonte.',
+        _ => 'Preparando o episódio…',
+      });
+    };
     _resources.clear();
     _ids.clear();
     _cache.clear();
     _pending.clear();
     _cacheBytes = 0;
-    final script = await rootBundle.loadString('assets/hosted_source.js');
-    final result = await _invoke('prepare', {
-      'script': script,
-      if (Platform.isAndroid)
-        'bridge': await rootBundle.loadString(
-          'assets/android_hosted_bridge.js',
-        ),
-      'url': url,
-      'kind': kind,
-      'expectedTitle': title,
-      'season': season,
-      'episode': episode,
-      'epoch': _epoch,
-    });
-    if (_closed) throw const ApiFailure('CANCELLED', 'Reprodução encerrada.');
-    return attach(result ?? {});
+    final requestEpoch = _epoch;
+    try {
+      final script = await rootBundle.loadString('assets/hosted_source.js');
+      final bridge = Platform.isAndroid
+          ? await rootBundle.loadString('assets/android_hosted_bridge.js')
+          : null;
+      if (_closed || requestEpoch != _epoch) {
+        throw const ApiFailure('CANCELLED', 'Reprodução encerrada.');
+      }
+      final result = await _invoke('prepare', {
+        'script': script,
+        'bridge': ?bridge,
+        'url': url,
+        'kind': kind,
+        'expectedTitle': title,
+        'season': season,
+        'episode': episode,
+        'epoch': requestEpoch,
+      });
+      if (_closed || requestEpoch != _epoch) {
+        throw const ApiFailure('CANCELLED', 'Reprodução encerrada.');
+      }
+      return attach(result ?? {});
+    } finally {
+      _listeners.remove(requestEpoch);
+      if (_epoch == requestEpoch) canShowSource = false;
+    }
   }
 
   /// A separate attachment entry makes the transport testable with owned media.
@@ -487,6 +508,7 @@ class HostedSource {
 
   Future<void> close() async {
     _closed = true;
+    canShowSource = false;
     final closingEpoch = _epoch;
     _listeners.remove(closingEpoch);
     _epoch = _uuid();

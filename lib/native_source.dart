@@ -49,6 +49,8 @@ class NativeSourceSession {
   Map<String, dynamic> title = {};
   NativePlayback? current;
   String? get activeStreamId => _stream;
+  bool get canShowSource => _hosted?.canShowSource == true;
+  Future<void> showSource() async => _hosted?.showSource();
 
   Future<dynamic> _request(
     String path, {
@@ -148,19 +150,48 @@ class NativeSourceSession {
         source.id == 'c7' ? 'Preparando o vídeo da C7…' : 'Analisando a fonte…',
       );
       _hosted ??= HostedSource(onStatus: onStatus);
-      final local = await _hosted!.prepare(
-        url: url.toString(),
-        kind: source.id == 'c7' ? 'c7' : 'superflix',
-        title: '${p['title_name'] ?? source.example}',
-        season: (p['season_number'] as num?)?.toInt() ?? source.season,
-        episode: (p['episode_number'] as num?)?.toInt() ?? source.episode,
-      );
-      p = {
-        ...p,
-        'url': local.url.toString(),
-        'variants': local.variants,
-        'source_height': local.height,
-      };
+      try {
+        final local = await _hosted!.prepare(
+          url: url.toString(),
+          kind: source.id == 'c7' ? 'c7' : 'superflix',
+          title: '${p['title_name'] ?? source.example}',
+          season: (p['season_number'] as num?)?.toInt() ?? source.season,
+          episode: (p['episode_number'] as num?)?.toInt() ?? source.episode,
+        );
+        p = {
+          ...p,
+          'url': local.url.toString(),
+          'variants': local.variants,
+          'source_height': local.height,
+        };
+      } on ApiFailure catch (error) {
+        if (error.code != 'SOURCE_DNS' ||
+            url.host != 'superflixapi.boats' ||
+            !source.id.startsWith('superflix-')) {
+          rethrow;
+        }
+        await _hosted!.close();
+        _hosted = null;
+        scope.check();
+        onStatus('Preparando a SuperFlix pelo servidor do Bechi…');
+        p = jsonMap(await _request('playback/$_stream'));
+        final raw = Uri.tryParse('${p['url']}');
+        final origin = Uri.parse(bechiOrigin);
+        final delivery = raw == null ? null : origin.resolveUri(raw);
+        if (delivery == null ||
+            delivery.scheme != origin.scheme ||
+            delivery.host != origin.host ||
+            delivery.port != origin.port ||
+            delivery.userInfo.isNotEmpty ||
+            delivery.hasFragment ||
+            delivery.path != '/api/v1/superflix/start/$_stream/index.m3u8') {
+          throw const ApiFailure(
+            'SOURCE_DELIVERY',
+            'O servidor não disponibilizou o vídeo da SuperFlix.',
+          );
+        }
+        p = {...p, 'url': delivery.toString()};
+      }
       url = Uri.parse('${p['url']}');
     }
     if (source.id.startsWith('superflix-') &&
@@ -247,7 +278,7 @@ class NativeSourceSession {
           jsonMap(state['mobile'])['needs_action'] == true) {
         throw const ApiFailure(
           'VERIFICATION',
-          'A origem solicitou uma confirmação humana. Atualize o aplicativo para usar a preparação nativa da fonte.',
+          'A SuperFlix pediu confirmação para esta sessão de reprodução.',
         );
       }
       if ([
@@ -256,8 +287,8 @@ class NativeSourceSession {
         'disconnected',
       ].contains(state['state'])) {
         throw const ApiFailure(
-          'SOURCE',
-          'A conexão com a fonte não ficou pronta. Tente novamente.',
+          'SUPERFLIX_SERVER',
+          'O servidor do Bechi não conseguiu abrir o vídeo da SuperFlix.',
         );
       }
       await scope.delay(pollInterval);

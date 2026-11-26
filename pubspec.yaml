@@ -1,7 +1,7 @@
 name: bechi_player_prototype
 description: "Player nativo Bechi Flix com controles Flutter e codecs locais."
 publish_to: 'none'
-version: 0.2.0+4
+version: 0.2.0+5
 
 environment:
   sdk: ^3.12.2

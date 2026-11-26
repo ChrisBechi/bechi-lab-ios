@@ -12,6 +12,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   private var verification: UINavigationController?
   private var channel: FlutterMethodChannel?
   private var reusable = false
+  private var sourceValidated = false
   private var startedAt = Date()
   private let origin = "https://bechi-flix.137-131-229-110.sslip.io"
   private let players = Set(["xn--tckasiu6cvova0eb5fua2449g98vg.best", "xn--80adalaab0boiodbce7addhh.delivery"])
@@ -43,7 +44,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       if kind == "superflix" { config["season"] = movie ? 0 : Int(components[2])!; config["episode"] = movie ? 0 : Int(components[3])! }
       guard let data = try? JSONSerialization.data(withJSONObject: config), let json = String(data: data, encoding: .utf8) else { fail(result, "SOURCE_INPUT"); return }
       let retainedFrame = reusable && target["root"] as? String == root ? framesForRoot(root) : nil
-      reusable = false
+      reusable = false; sourceValidated = false
       pending?(FlutterError(code: "SOURCE_REPLACED", message: "A solicitação da fonte mudou.", details: nil))
       pending = result; target = config; frames.removeAll(); timeout?.cancel(); startedAt = Date()
       diagnostic("prepare")
@@ -64,14 +65,16 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       // Preserve the provider's own WK data store; never import browser cookies.
       if let rootFrame = retainedFrame {
         view.callAsyncJavaScript("window.__bechiConfigureHosted(config)", arguments: ["config": config], in: rootFrame, in: .page) { _ in }
-      } else if kind == "c7" {
-        // This is the canonical player URL returned for the requested episode.
-        view.load(URLRequest(url: url))
       } else {
         var shell = URLComponents(string: origin + "/native-source-shell.html")!
         shell.fragment = root
         view.load(URLRequest(url: shell.url!))
       }
+    case "showSource":
+      guard let args = call.arguments as? [String: Any], args["epoch"] as? String == target["epoch"] as? String,
+            pending != nil else { result(nil); return }
+      showVerification(manual: true)
+      result(nil)
     case "read":
       guard let args = call.arguments as? [String: Any], args["epoch"] as? String == target["epoch"] as? String, let key = args["frame"] as? String, let frame = frames[key], let value = args["url"] as? String,
             let url = URL(string: value), safeMedia(url), value.utf8.count <= 8192, let view = web else { fail(result, "SOURCE_READ"); return }
@@ -128,15 +131,20 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     view.isUserInteractionEnabled = false; parent.insertSubview(view, belowSubview: root.view)
     diagnostic("surface", ["attached": view.window != nil, "width": Int(view.bounds.width), "height": Int(view.bounds.height)])
   }
-  private func showVerification() {
+  private func showVerification(manual: Bool = false) {
     guard verification == nil, pending != nil, let view = web, let root = rootController() else { return }
-    diagnostic("human")
-    channel?.invokeMethod("phase", arguments: ["epoch": target["epoch"] ?? "", "phase": "human"])
-    timeout?.cancel(); timeout = nil
+    diagnostic(manual ? "source_opened_by_user" : "human")
+    if !manual {
+      channel?.invokeMethod("phase", arguments: ["epoch": target["epoch"] ?? "", "phase": "human"])
+      timeout?.cancel(); timeout = nil
+    }
     for frame in frames.values {
       view.callAsyncJavaScript("if (document.documentElement) document.documentElement.style.visibility = 'visible'", arguments: [:], in: frame, in: .page) { _ in }
     }
-    let screen = HostedVerificationController(web: view) { [weak self] in self?.finishFailure("VERIFICATION_CANCELLED"); self?.dismissVerification() }
+    let screen = HostedVerificationController(web: view, manual: manual) { [weak self] in
+      if manual { self?.dismissVerification() }
+      else { self?.finishFailure("VERIFICATION_CANCELLED") }
+    }
     let navigation = UINavigationController(rootViewController: screen); navigation.modalPresentationStyle = .fullScreen
     navigation.isModalInPresentation = true; verification = navigation
     var presenter = root; while let current = presenter.presentedViewController { presenter = current }
@@ -161,8 +169,19 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     guard root || player else { return }
     if type == "human" { showVerification(); return }
     if let key = data["document"] as? String, key.count < 100 { frames[key] = message.frameInfo }
-    if type == "loaded" { diagnostic("document_loaded", ["scope": root ? "root" : "player"]); return }
+    if type == "loaded" {
+      diagnostic("document_loaded", ["scope": root ? "root" : "player"])
+      if root {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+          guard let self = self, self.target["epoch"] as? String == epoch, self.pending != nil,
+                self.verification == nil, !self.sourceValidated else { return }
+          self.channel?.invokeMethod("phase", arguments: ["epoch": epoch, "phase": "waiting"])
+        }
+      }
+      return
+    }
     if type == "validated" {
+      sourceValidated = true
       diagnostic("validated")
       dismissVerification(); channel?.invokeMethod("phase", arguments: ["epoch": epoch, "phase": "episode"])
       if pending != nil && timeout == nil { let work = DispatchWorkItem { [weak self] in self?.finishFailure("SOURCE_TIMEOUT") }; timeout = work; DispatchQueue.main.asyncAfter(deadline: .now() + 240, execute: work) }
@@ -184,11 +203,11 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     guard url.scheme == "https", url.user == nil, url.password == nil, url.port == nil, let host = url.host else { decisionHandler(.cancel); return }
     if navigationAction.targetFrame?.isMainFrame == true {
       let shell = host == URL(string: origin)?.host && url.path == "/native-source-shell.html" && url.query == nil
-      decisionHandler(shell || isC7Document(url) ? .allow : .cancel)
+      decisionHandler(shell ? .allow : .cancel)
       return
     }
     let allowed = host == "challenges.cloudflare.com" || host == "superflixapi.boats" && (url.path.hasPrefix("/serie/") || url.path.hasPrefix("/filme/") || url.path.hasPrefix("/player/redirect") || url.path.hasPrefix("/cdn-cgi/")) || players.contains(host) && url.path.range(of: "^/video/[a-f0-9]{32}$", options: .regularExpression) != nil || target["kind"] as? String == "c7" && url.absoluteString == target["url"] as? String
-    decisionHandler(allowed ? .allow : .cancel)
+    decisionHandler(allowed || isC7Document(url) ? .allow : .cancel)
   }
   private func isC7Document(_ url: URL) -> Bool {
     guard target["kind"] as? String == "c7", let expected = target["url"] as? String,
@@ -241,12 +260,12 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
 
 @available(iOS 14.0, *)
 private final class HostedVerificationController: UIViewController {
-  let web: WKWebView; let cancel: () -> Void
-  init(web: WKWebView, cancel: @escaping () -> Void) { self.web = web; self.cancel = cancel; super.init(nibName: nil, bundle: nil) }
+  let web: WKWebView; let manual: Bool; let cancel: () -> Void
+  init(web: WKWebView, manual: Bool, cancel: @escaping () -> Void) { self.web = web; self.manual = manual; self.cancel = cancel; super.init(nibName: nil, bundle: nil) }
   required init?(coder: NSCoder) { fatalError("Unsupported") }
   override func viewDidLoad() {
-    super.viewDidLoad(); title = "Confirmação da fonte"; view.backgroundColor = .black
-    navigationItem.leftBarButtonItem = UIBarButtonItem(title: "Cancelar", style: .plain, target: self, action: #selector(close))
+    super.viewDidLoad(); title = manual ? "Página da fonte" : "Confirmação da fonte"; view.backgroundColor = .black
+    navigationItem.leftBarButtonItem = UIBarButtonItem(title: manual ? "Voltar" : "Cancelar", style: .plain, target: self, action: #selector(close))
     web.removeFromSuperview(); web.isUserInteractionEnabled = true; web.frame = view.bounds; web.autoresizingMask = [.flexibleWidth, .flexibleHeight]; view.addSubview(web)
   }
   @objc private func close() { cancel() }

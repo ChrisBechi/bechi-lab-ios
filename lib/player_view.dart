@@ -7,6 +7,42 @@ import 'native_source.dart';
 import 'native_engine.dart';
 import 'source_case.dart';
 
+String? episodeAction(
+  Map<String, dynamic>? data,
+  Duration position,
+  Duration duration,
+) {
+  if (data == null ||
+      jsonMap(data['stream'])['kind'] != 'main' ||
+      duration <= Duration.zero ||
+      position.isNegative ||
+      position > duration) {
+    return null;
+  }
+  final seconds = position.inMilliseconds / 1000;
+  final length = duration.inMilliseconds / 1000;
+  final credits = data['episode_end_seconds'];
+  if (data['episode_id'] != null &&
+      data['next_stream_id'] is String &&
+      credits is num &&
+      credits >= 0 &&
+      credits < length &&
+      seconds >= length - credits) {
+    return 'next';
+  }
+  final start = data['intro_start_seconds'], end = data['intro_end_seconds'];
+  if (start is num &&
+      end is num &&
+      start >= 0 &&
+      end > start &&
+      end <= length &&
+      seconds >= start &&
+      seconds < end) {
+    return 'intro';
+  }
+  return null;
+}
+
 class NativePlayerPage extends StatefulWidget {
   const NativePlayerPage({
     super.key,
@@ -129,8 +165,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     );
     subscriptions.add(
       player.stream.completed.listen((completed) {
+        if (!mounted || closing || busy || !mediaLoaded) return;
         if (completed && playback?.metadata['next_stream_id'] is String) {
           unawaited(openNext());
+        } else {
+          setState(() {});
         }
       }),
     );
@@ -305,6 +344,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     if (u == null || !session.acceptsMediaUri(u)) return;
     setState(() => busy = true);
     final position = player.state.position;
+    final wasPlaying = player.state.playing;
     try {
       session.position = position;
       final prepared = await session.prepareQuality(u.toString());
@@ -314,7 +354,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
           httpHeaders: widget.api.mediaHeaders(prepared),
           start: position,
         ),
-        play: true,
+        play: wasPlaying,
       );
       if (mounted) setState(() => quality = '${picked['label']}');
     } catch (_) {
@@ -458,10 +498,16 @@ class NativePlayerPageState extends State<NativePlayerPage> {
         landscape = MediaQuery.orientationOf(context) == Orientation.landscape;
     final total = state.duration.inMilliseconds.toDouble(),
         position = dragging ?? state.position.inMilliseconds.toDouble();
-    final introEnd = (playback?.metadata['intro_end_seconds'] as num?)
-        ?.toDouble();
-    final introStart =
-        (playback?.metadata['intro_start_seconds'] as num?)?.toDouble() ?? 0;
+    final data = playback?.metadata;
+    final title = playback?.name ?? widget.source.example;
+    final season = data?['season_number'], episode = data?['episode_number'];
+    final heading = season is num && episode is num
+        ? '$title · T$season EP$episode'
+        : title;
+    final action =
+        mediaLoaded && !busy && error == null && playback?.isLive == false
+        ? episodeAction(data, state.position, state.duration)
+        : null;
     return PopScope(
       canPop: closing,
       onPopInvokedWithResult: (didPop, result) {
@@ -490,19 +536,12 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                       ),
                       Expanded(
                         child: Text(
-                          playback?.name ?? widget.source.example,
+                          heading,
                           maxLines: 2,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
                           ),
-                        ),
-                      ),
-                      const Text(
-                        'NATIVO',
-                        style: TextStyle(
-                          color: Colors.lightBlueAccent,
-                          fontSize: 10,
                         ),
                       ),
                     ],
@@ -540,6 +579,13 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                                   textAlign: TextAlign.center,
                                 ),
                               ),
+                              if (busy &&
+                                  error == null &&
+                                  session.canShowSource)
+                                TextButton(
+                                  onPressed: session.showSource,
+                                  child: const Text('Ver página da fonte'),
+                                ),
                             ],
                           ),
                         ),
@@ -580,59 +626,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                               ),
                               Expanded(
                                 child: Text(
-                                  playback?.name ?? widget.source.example,
+                                  heading,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      if (controls && !busy && error == null)
-                        Center(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (playback?.isLive != true)
-                                IconButton(
-                                  key: const Key('seek-back'),
-                                  tooltip: 'Voltar 10 segundos',
-                                  iconSize: 32,
-                                  onPressed: () => seek(
-                                    state.position -
-                                        const Duration(seconds: 10),
-                                  ),
-                                  icon: const Icon(Icons.replay_10),
-                                ),
-                              const SizedBox(width: 24),
-                              IconButton(
-                                key: const Key('play-pause'),
-                                tooltip: state.playing
-                                    ? 'Pausar'
-                                    : 'Reproduzir',
-                                iconSize: 52,
-                                onPressed: () async {
-                                  await player.playOrPause();
-                                  scheduleHide();
-                                },
-                                icon: Icon(
-                                  state.playing
-                                      ? Icons.pause_circle
-                                      : Icons.play_circle,
-                                ),
-                              ),
-                              const SizedBox(width: 24),
-                              if (playback?.isLive != true)
-                                IconButton(
-                                  key: const Key('seek-forward'),
-                                  tooltip: 'Avançar 10 segundos',
-                                  iconSize: 32,
-                                  onPressed: () => seek(
-                                    state.position +
-                                        const Duration(seconds: 10),
-                                  ),
-                                  icon: const Icon(Icons.forward_10),
-                                ),
                             ],
                           ),
                         ),
@@ -644,9 +642,48 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (playback?.isLive != true && total > 0)
-                                Row(
-                                  children: [
+                              Row(
+                                children: [
+                                  IconButton(
+                                    key: const Key('play-pause'),
+                                    tooltip: state.playing
+                                        ? 'Pausar'
+                                        : 'Reproduzir',
+                                    iconSize: 32,
+                                    onPressed: () async {
+                                      await player.playOrPause();
+                                      scheduleHide();
+                                    },
+                                    icon: Icon(
+                                      state.playing
+                                          ? Icons.pause_circle
+                                          : Icons.play_circle,
+                                    ),
+                                  ),
+                                  if (playback?.isLive != true)
+                                    IconButton(
+                                      key: const Key('seek-back'),
+                                      tooltip: 'Voltar 10 segundos',
+                                      iconSize: 24,
+                                      onPressed: () => seek(
+                                        state.position -
+                                            const Duration(seconds: 10),
+                                      ),
+                                      icon: const Icon(Icons.replay_10),
+                                    ),
+                                  if (playback?.isLive != true)
+                                    IconButton(
+                                      key: const Key('seek-forward'),
+                                      tooltip: 'Avançar 10 segundos',
+                                      iconSize: 24,
+                                      onPressed: () => seek(
+                                        state.position +
+                                            const Duration(seconds: 10),
+                                      ),
+                                      icon: const Icon(Icons.forward_10),
+                                    ),
+                                  if (playback?.isLive != true &&
+                                      total > 0) ...[
                                     Text(
                                       time(state.position),
                                       style: const TextStyle(fontSize: 11),
@@ -678,7 +715,8 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                                       style: const TextStyle(fontSize: 11),
                                     ),
                                   ],
-                                ),
+                                ],
+                              ),
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
@@ -732,17 +770,43 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                             ],
                           ),
                         ),
-                      if (introEnd != null &&
-                          state.position.inMilliseconds / 1000 >= introStart &&
-                          state.position.inMilliseconds / 1000 < introEnd)
+                      if (action != null)
                         Positioned(
                           right: 16,
                           bottom: controls ? 110 : 20,
-                          child: FilledButton(
-                            onPressed: () => seek(
-                              Duration(milliseconds: (introEnd * 1000).round()),
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.skip_next),
+                            onPressed: action == 'next'
+                                ? openNext
+                                : () => seek(
+                                    Duration(
+                                      milliseconds:
+                                          ((data!['intro_end_seconds'] as num) *
+                                                  1000)
+                                              .round(),
+                                    ),
+                                  ),
+                            label: Text(
+                              action == 'next'
+                                  ? 'Próximo episódio'
+                                  : 'Pular abertura',
                             ),
-                            child: const Text('Pular abertura'),
+                          ),
+                        ),
+                      if (state.completed &&
+                          mediaLoaded &&
+                          !busy &&
+                          error == null &&
+                          playback?.isLive == false &&
+                          data?['next_stream_id'] == null)
+                        Center(
+                          child: FilledButton.icon(
+                            icon: const Icon(Icons.replay),
+                            onPressed: () async {
+                              await seek(Duration.zero);
+                              if (mounted && !closing) await player.play();
+                            },
+                            label: const Text('Reproduzir novamente'),
                           ),
                         ),
                     ],
