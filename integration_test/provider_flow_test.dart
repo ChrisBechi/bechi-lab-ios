@@ -43,7 +43,11 @@ void main() {
         final player = Player();
         final key = GlobalKey<NativePlayerPageState>();
         var playerOwnedByPage = false;
-        var outcome = <String, dynamic>{'source': source.id, 'passed': false};
+        var outcome = <String, dynamic>{
+          'source': source.id,
+          'passed': false,
+          'stage': 'prepare',
+        };
         try {
           final configured = await tester.runAsync(() async {
             await prepareDiagnosticPlayer(player);
@@ -209,6 +213,7 @@ void main() {
                 '[media]',
               ) ??
               'Native provider flow failed or timed out.';
+          outcome['status'] = key.currentState?.status;
           rethrow;
         } finally {
           final state = key.currentState;

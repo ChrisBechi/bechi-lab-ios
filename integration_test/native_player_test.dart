@@ -8,6 +8,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:bechi_player_prototype/bechi_api.dart';
 import 'package:bechi_player_prototype/player_view.dart';
 import 'package:bechi_player_prototype/source_case.dart';
+import 'package:bechi_player_prototype/native_engine.dart'
+    show selectNativeSubtitle;
 
 // The official libmpv 0.6.0 simulator slice has no AudioUnit driver. Exercise
 // actual decoding through a virtual sink only in CI, never in device builds.
@@ -66,6 +68,8 @@ Future<void> until(
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
+  final diagnosticRunId = DateTime.now().microsecondsSinceEpoch.toString();
+  debugPrint('NATIVE_CODEC_BEGIN $diagnosticRunId');
   testWidgets('Keychain writes, restores and deletes the native session', (
     tester,
   ) async {
@@ -103,7 +107,11 @@ void main() {
           (e) => errors.add(e.replaceAll(RegExp(r'https?://\S+'), '[media]')),
         );
         final key = GlobalKey<NativePlayerPageState>();
-        final outcome = <String, dynamic>{'source': source.id, 'passed': false};
+        final outcome = <String, dynamic>{
+          'source': source.id,
+          'passed': false,
+          'run_id': diagnosticRunId,
+        };
         var playerOwnedByPage = false;
         try {
           final configured = await tester.runAsync(() async {
@@ -228,13 +236,33 @@ void main() {
             final subtitle = player.state.tracks.subtitle
                 .where((t) => t.language == 'por')
                 .first;
-            await player.setSubtitleTrack(subtitle);
+            await selectNativeSubtitle(player, subtitle);
             await until(
               tester,
               () => player.state.subtitle.any(
                 (v) => v.contains('Teste de legenda'),
               ),
             );
+            await key.currentState!.seek(const Duration(seconds: 9));
+            await until(
+              tester,
+              () => player.state.subtitle.any(
+                (v) => v.contains('A legenda continuou'),
+              ),
+            );
+            await key.currentState!.seek(const Duration(seconds: 1));
+            await until(
+              tester,
+              () => player.state.subtitle.any(
+                (v) => v.contains('Teste de legenda'),
+              ),
+            );
+            await selectNativeSubtitle(player, SubtitleTrack.no());
+            await until(
+              tester,
+              () => player.state.subtitle.every((v) => v.isEmpty),
+            );
+            outcome['subtitle_select_seek_disable'] = true;
           }
           Navigator.of(tester.element(find.text('Legendas'))).pop();
           await tester.pump(const Duration(milliseconds: 400));
@@ -271,6 +299,8 @@ void main() {
               'audio_sample_rate': player.state.audioParams.sampleRate,
               'engine_errors': errors,
               'audio_log': audioLog,
+              'subtitle_text': player.state.subtitle,
+              'subtitle_track': player.state.track.subtitle.id,
             });
           }
           await sub.cancel();
@@ -284,6 +314,58 @@ void main() {
           binding.reportData ??= {};
           binding.reportData![source.id] = outcome;
           debugPrint('NATIVE_CODEC_RESULT ${jsonEncode(outcome)}');
+          if (source.id == codecCases.last.id) {
+            final passed = codecCases
+                .where(
+                  (s) => (binding.reportData?[s.id] as Map?)?['passed'] == true,
+                )
+                .length;
+            await tester.pumpWidget(
+              MaterialApp(
+                theme: ThemeData.dark(),
+                home: Scaffold(
+                  body: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            passed == codecCases.length
+                                ? Icons.check_circle
+                                : Icons.info,
+                            color: passed == codecCases.length
+                                ? Colors.greenAccent
+                                : Colors.orangeAccent,
+                            size: 64,
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Testes concluídos',
+                            style: TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '$passed de ${codecCases.length} formatos aprovados',
+                            style: const TextStyle(fontSize: 20),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'A rodada terminou. Esta tela permanece aberta para você conferir o resultado.',
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await tester.pump();
+          }
         }
       },
     );

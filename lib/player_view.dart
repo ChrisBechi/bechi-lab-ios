@@ -49,6 +49,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
   NativePlayback? playback;
   String status = 'Preparando reprodução…', quality = 'Automática';
   String? error;
+  String? subtitleSelection;
   bool controls = true, busy = false, closing = false, audioChosen = false;
   int revision = 0;
   Timer? hideTimer, progressTimer;
@@ -150,6 +151,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
       error = null;
       busy = true;
       audioChosen = false;
+      subtitleSelection = null;
       quality = 'Automática';
     });
     try {
@@ -158,7 +160,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
       playback = data;
       await configureNativeEngine(player);
       await player.open(
-        Media(data.url, httpHeaders: data.headers, start: data.position),
+        Media(
+          data.url,
+          httpHeaders: data.headers,
+          start: data.isLive ? null : data.position,
+        ),
         play: true,
       );
       mediaLoaded = true;
@@ -364,12 +370,16 @@ class NativePlayerPageState extends State<NativePlayerPage> {
             const ListTile(title: Text('Legendas')),
             ListTile(
               title: const Text('Desativadas'),
+              selected:
+                  (subtitleSelection ?? player.state.track.subtitle.id) == 'no',
               onTap: () => Navigator.pop(context, SubtitleTrack.no()),
             ),
             for (final t in tracks)
               ListTile(
                 title: Text(t.title ?? t.language ?? 'Legenda ${t.id}'),
-                selected: t.id == player.state.track.subtitle.id,
+                selected:
+                    t.id ==
+                    (subtitleSelection ?? player.state.track.subtitle.id),
                 onTap: () => Navigator.pop(context, t),
               ),
             for (final t in jsonRows(
@@ -391,7 +401,10 @@ class NativePlayerPageState extends State<NativePlayerPage> {
         ),
       ),
     );
-    if (track != null) await player.setSubtitleTrack(track);
+    if (track != null) {
+      await selectNativeSubtitle(player, track);
+      if (mounted) setState(() => subtitleSelection = track.id);
+    }
     scheduleHide();
   }
 

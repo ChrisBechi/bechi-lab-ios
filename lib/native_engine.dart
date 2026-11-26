@@ -7,6 +7,22 @@ import 'bechi_api.dart';
 
 const _audioChannel = MethodChannel('app.bechiflix.native/audio');
 final _audioLeases = <Player, String>{};
+
+/// media_kit clears its subtitle text before assigning sid. If mpv already
+/// selected that track through `auto`, it emits no new text event for the same
+/// cue. Keep the active cue intact when selecting the already active track.
+Future<void> selectNativeSubtitle(Player player, SubtitleTrack track) async {
+  final native = player.platform;
+  if (native is NativePlayer &&
+      !track.uri &&
+      !track.data &&
+      track.id != 'no' &&
+      await native.getProperty('sid') == track.id) {
+    return;
+  }
+  await player.setSubtitleTrack(track);
+}
+
 String _audioLease() {
   final random = Random.secure();
   final bytes = List.generate(16, (_) => random.nextInt(256));
