@@ -214,6 +214,11 @@ void main() {
               ) ??
               'Native provider flow failed or timed out.';
           outcome['status'] = key.currentState?.status;
+          outcome['needs_human_verification'] =
+              key.currentState?.status.contains(
+                'Confirmação humana necessária',
+              ) ==
+              true;
           rethrow;
         } finally {
           final state = key.currentState;

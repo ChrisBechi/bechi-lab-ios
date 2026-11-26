@@ -5,7 +5,7 @@
   const players = new Set(['xn--tckasiu6cvova0eb5fua2449g98vg.best', 'xn--80adalaab0boiodbce7addhh.delivery']);
   const doc = crypto.getRandomValues(new Uint32Array(4)).join('-');
   const providerAddresses = new Map();
-  let target = window.__bechiHostedTarget, busy = false, prepared = '', sent = '', human = false, failed = false;
+  let target = window.__bechiHostedTarget, busy = false, prepared = '', sent = '', human = false, failed = false, announced = false;
   const normalize = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   function post(type, extra = {}) {
     window.webkit?.messageHandlers?.bechiHosted?.postMessage({type, document: doc, documentURL: location.href, epoch: target?.epoch, ...extra});
@@ -60,6 +60,7 @@
   }
   async function inspect() {
     if (!target) return;
+    if (!announced && (rootPage() || playerPage())) { announced = true; post('loaded'); }
     if (location.hostname === 'challenges.cloudflare.com') {
       // Observation only. The actual person taps the actual WebKit view.
       const check = document.querySelector('input[type="checkbox"]:not(:checked):not(:disabled),[role="checkbox"][aria-checked="false"]');

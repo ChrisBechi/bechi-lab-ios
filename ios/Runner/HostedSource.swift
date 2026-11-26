@@ -12,6 +12,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   private var verification: UINavigationController?
   private var channel: FlutterMethodChannel?
   private var reusable = false
+  private var startedAt = Date()
   private let origin = "https://bechi-flix.137-131-229-110.sslip.io"
   private let players = Set(["xn--tckasiu6cvova0eb5fua2449g98vg.best", "xn--80adalaab0boiodbce7addhh.delivery"])
 
@@ -44,7 +45,8 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       let retainedFrame = reusable && target["root"] as? String == root ? framesForRoot(root) : nil
       reusable = false
       pending?(FlutterError(code: "SOURCE_REPLACED", message: "A solicitação da fonte mudou.", details: nil))
-      pending = result; target = config; frames.removeAll(); timeout?.cancel()
+      pending = result; target = config; frames.removeAll(); timeout?.cancel(); startedAt = Date()
+      diagnostic("prepare")
       let work = DispatchWorkItem { [weak self] in self?.finishFailure("SOURCE_TIMEOUT") }
       timeout = work; DispatchQueue.main.asyncAfter(deadline: .now() + 240, execute: work)
       if web == nil {
@@ -108,13 +110,25 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   private func rootController() -> UIViewController? {
     UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }.first { $0.isKeyWindow }?.rootViewController
   }
+  private func diagnostic(_ stage: String, _ extra: [String: Any] = [:]) {
+    var info = extra
+    info["epoch"] = target["epoch"]; info["kind"] = target["kind"]; info["stage"] = stage
+    info["elapsed_ms"] = Int(Date().timeIntervalSince(startedAt) * 1000)
+    channel?.invokeMethod("diagnostic", arguments: info)
+  }
   private func attachHidden() {
-    guard verification == nil, let view = web, let root = rootController(), let parent = root.view.superview else { return }
+    guard verification == nil else { return }
+    guard let view = web, let root = rootController(), let parent = root.view.superview else {
+      diagnostic("surface_missing", ["root_available": rootController() != nil]); return
+    }
     view.removeFromSuperview(); view.frame = parent.bounds; view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     view.isUserInteractionEnabled = false; parent.insertSubview(view, belowSubview: root.view)
+    diagnostic("surface", ["attached": view.window != nil, "width": Int(view.bounds.width), "height": Int(view.bounds.height)])
   }
   private func showVerification() {
     guard verification == nil, pending != nil, let view = web, let root = rootController() else { return }
+    diagnostic("human")
+    channel?.invokeMethod("phase", arguments: ["epoch": target["epoch"] ?? "", "phase": "human"])
     timeout?.cancel(); timeout = nil
     for frame in frames.values {
       view.callAsyncJavaScript("if (document.documentElement) document.documentElement.style.visibility = 'visible'", arguments: [:], in: frame, in: .page) { _ in }
@@ -130,7 +144,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     screen.dismiss(animated: false) { [weak self] in self?.attachHidden() }
   }
   private func fail(_ result: FlutterResult, _ code: String) { result(FlutterError(code: code, message: "A fonte não concluiu a preparação. Tente novamente.", details: nil)) }
-  private func finishFailure(_ code: String) { reusable = false; timeout?.cancel(); timeout = nil; dismissVerification(); guard let callback = pending else { return }; pending = nil; fail(callback, code) }
+  private func finishFailure(_ code: String) { diagnostic("failure", ["code": code]); reusable = false; timeout?.cancel(); timeout = nil; dismissVerification(); guard let callback = pending else { return }; pending = nil; fail(callback, code) }
 
   func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
     guard let data = message.body as? [String: Any], let epoch = data["epoch"] as? String, epoch == target["epoch"] as? String,
@@ -144,7 +158,9 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     guard root || player else { return }
     if type == "human" { showVerification(); return }
     if let key = data["document"] as? String, key.count < 100 { frames[key] = message.frameInfo }
+    if type == "loaded" { diagnostic("document_loaded", ["scope": root ? "root" : "player"]); return }
     if type == "validated" {
+      diagnostic("validated")
       dismissVerification(); channel?.invokeMethod("phase", arguments: ["epoch": epoch, "phase": "episode"])
       if pending != nil && timeout == nil { let work = DispatchWorkItem { [weak self] in self?.finishFailure("SOURCE_TIMEOUT") }; timeout = work; DispatchQueue.main.asyncAfter(deadline: .now() + 240, execute: work) }
       return
@@ -155,6 +171,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     timeout?.cancel(); timeout = nil; dismissVerification()
     guard let callback = pending else { return }; pending = nil
     reusable = true
+    diagnostic("ready", ["format": data["format"] ?? "hls", "variants": variants.count])
     callback(["frame": key, "url": value, "variants": variants, "format": data["format"] ?? "hls"])
   }
 
@@ -169,8 +186,11 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? { nil }
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
     let code = (error as NSError).code
+    diagnostic("navigation_failure", ["os_code": code])
     if code != NSURLErrorCancelled { finishFailure("SOURCE_CONNECTION") }
   }
+  func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { diagnostic("shell_loaded") }
+  func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { finishFailure("SOURCE_PROCESS") }
 }
 
 @available(iOS 14.0, *)

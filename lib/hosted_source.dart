@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'bechi_api.dart';
 import 'source_case.dart';
@@ -174,8 +175,14 @@ class HostedSource {
       _callbacks = true;
       _channel.setMethodCallHandler((call) async {
         final args = jsonMap(call.arguments);
-        if (call.method == 'phase' && args['phase'] == 'episode') {
-          _listeners[args['epoch']]?.call('Preparando o episódio…');
+        if (call.method == 'phase') {
+          _listeners[args['epoch']]?.call(
+            args['phase'] == 'human'
+                ? 'Confirmação humana necessária na fonte.'
+                : 'Preparando o episódio…',
+          );
+        } else if (call.method == 'diagnostic' && kDebugMode) {
+          debugPrint('NATIVE_HOSTED_DIAGNOSTIC ${jsonEncode(args)}');
         }
       });
     }
