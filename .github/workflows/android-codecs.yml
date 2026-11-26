@@ -2,6 +2,10 @@ name: Build Android codec diagnostic
 on:
   workflow_dispatch:
     inputs:
+      source_lab:
+        type: boolean
+        default: false
+        description: Build the standalone ARM64 source player for physical testing
       emulator:
         type: boolean
         default: false
@@ -50,12 +54,32 @@ jobs:
       - run: flutter analyze --fatal-infos
       - run: flutter test
       - run: node --test test/hosted_source.test.mjs test/android_hosted_bridge.test.mjs
-      - run: flutter build apk --debug --target lib/codec_debug.dart --target-platform "$BECHI_ANDROID_TARGETS"
+      - name: Build the ARM64 source player
+        if: inputs.source_lab
+        env:
+          BECHI_SOURCE_LAB: '1'
+        run: |
+          flutter build apk --release --target lib/main.dart --target-platform android-arm64 --split-per-abi
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk dist/Bechi-Native-Android-0.2.0.apk
+          cd dist
+          sha256sum Bechi-Native-Android-0.2.0.apk > SHA256.txt
+      - uses: actions/upload-artifact@v4
+        if: inputs.source_lab
+        with:
+          name: Bechi-Native-Android
+          path: |
+            dist/Bechi-Native-Android-0.2.0.apk
+            dist/SHA256.txt
+      - if: ${{ !inputs.source_lab }}
+        run: flutter build apk --debug --target lib/codec_debug.dart --target-platform "$BECHI_ANDROID_TARGETS"
       - name: Package diagnostic
+        if: ${{ !inputs.source_lab }}
         run: |
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-debug.apk dist/Bechi-Codecs-0.2.0.apk
       - name: Build automatic physical-device codec checks
+        if: ${{ !inputs.source_lab }}
         env:
           BECHI_CODEC_TESTS: '1'
         run: |
@@ -64,6 +88,7 @@ jobs:
           cd dist
           sha256sum Bechi-Codecs-0.2.0.apk Bechi-Codec-Checks-0.2.0.apk > SHA256-Android.txt
       - uses: actions/upload-artifact@v4
+        if: ${{ !inputs.source_lab }}
         with:
           name: Bechi-Android-Codecs
           path: |
@@ -71,7 +96,7 @@ jobs:
             dist/Bechi-Codec-Checks-0.2.0.apk
             dist/SHA256-Android.txt
   emulator:
-    if: ${{ always() && inputs.emulator && (needs.android.result == 'success' || (needs.android.result == 'skipped' && inputs.artifact_run != '')) }}
+    if: ${{ always() && inputs.emulator && !inputs.source_lab && (needs.android.result == 'success' || (needs.android.result == 'skipped' && inputs.artifact_run != '')) }}
     needs: android
     runs-on: ubuntu-24.04
     timeout-minutes: 20

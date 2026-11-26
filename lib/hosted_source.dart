@@ -65,10 +65,13 @@ class HostedSource {
     try {
       return jsonMap(await _channel.invokeMethod<dynamic>(method, arguments));
     } on PlatformException catch (e) {
-      throw ApiFailure(
-        e.code,
-        'A fonte não concluiu a preparação. Tente novamente.',
-      );
+      throw ApiFailure(e.code, switch (e.code) {
+        'SOURCE_DNS' => 'A rede não conseguiu localizar o endereço da fonte.',
+        'SOURCE_CONNECTION' => 'Não foi possível conectar à fonte de vídeo.',
+        'SOURCE_TLS' => 'A conexão segura com a fonte falhou.',
+        'SOURCE_TIMEOUT' => 'A fonte demorou a responder. Tente novamente.',
+        _ => 'A fonte não concluiu a preparação. Tente novamente.',
+      });
     }
   }
 

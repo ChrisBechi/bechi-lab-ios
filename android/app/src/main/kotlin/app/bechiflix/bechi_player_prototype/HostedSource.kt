@@ -148,14 +148,34 @@ class HostedSource(private val activity: Activity, messenger: BinaryMessenger) :
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean =
                 request == null || !allowedNavigation(request.url, request.isForMainFrame)
             override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: SslError?) {
-                handler?.cancel(); finishFailure("SOURCE_TLS")
+                handler?.cancel()
+                if (pending != null && error?.url?.let { isSourceDocument(Uri.parse(it)) } == true) {
+                    finishFailure("SOURCE_TLS")
+                }
             }
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                if (request?.isForMainFrame == true) finishFailure("SOURCE_CONNECTION")
+                if (pending == null || request == null || !isSourceDocument(request.url)) return
+                val code = when (error?.errorCode) {
+                    WebViewClient.ERROR_HOST_LOOKUP -> "SOURCE_DNS"
+                    WebViewClient.ERROR_CONNECT, WebViewClient.ERROR_IO -> "SOURCE_CONNECTION"
+                    WebViewClient.ERROR_TIMEOUT -> "SOURCE_TIMEOUT"
+                    WebViewClient.ERROR_FAILED_SSL_HANDSHAKE -> "SOURCE_TLS"
+                    else -> return
+                }
+                finishFailure(code)
             }
             override fun onPageFinished(view: WebView?, url: String?) { diagnostic("shell_loaded") }
         }
         return view
+    }
+
+    private fun isSourceDocument(uri: Uri): Boolean {
+        if (uri.scheme != "https" || uri.userInfo != null || uri.port != -1) return false
+        val address = uri.buildUpon().clearQuery().fragment(null).build().toString()
+        if (address == "$origin/native-source-shell.html" ||
+            address == target.optString("root") || address == target.optString("url")) return true
+        return target.optString("kind") == "superflix" && uri.host in players &&
+            Regex("^/video/[a-f0-9]{32}$").matches(uri.path.orEmpty())
     }
 
     private fun loadShell() {

@@ -15,8 +15,13 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = if (System.getenv("BECHI_CODEC_TESTS") == "1") "app.bechiflix.codecchecks" else "app.bechiflix.codecdebug"
+        val sourceLab = System.getenv("BECHI_SOURCE_LAB") == "1"
+        applicationId = when {
+            sourceLab -> "app.bechiflix.nativelab"
+            System.getenv("BECHI_CODEC_TESTS") == "1" -> "app.bechiflix.codecchecks"
+            else -> "app.bechiflix.codecdebug"
+        }
+        manifestPlaceholders["bechiAppLabel"] = if (sourceLab) "Bechi Native" else "Bechi · Codecs"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
