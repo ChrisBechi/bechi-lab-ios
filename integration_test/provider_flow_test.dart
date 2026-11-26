@@ -20,6 +20,18 @@ class TemporaryStore implements SessionStore {
   Future<String?> read() async {
     final token = Platform.environment['BECHI_QA_TOKEN'];
     if (token != null) return token;
+    if (Platform.isAndroid) {
+      // An own temporary QA identity is provisioned only into the debug app's
+      // private cache at runtime and removed after the physical test.
+      final fixture = File(
+        '${Directory.systemTemp.path}/bechi-native-qa-session',
+      );
+      if (await fixture.exists()) {
+        final value = (await fixture.readAsString()).trim();
+        if (RegExp(r'^[A-Za-z0-9_-]{40,100}$').hasMatch(value)) return value;
+      }
+      return NativeSessionStore().read();
+    }
     if (!Platform.isIOS) return null;
     final context = await simulatorTestChannel.invokeMapMethod<String, dynamic>(
       'context',
@@ -35,7 +47,15 @@ class TemporaryStore implements SessionStore {
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
-  for (final source in sourceCases) {
+  const requested = String.fromEnvironment('BECHI_PROVIDER_CASES');
+  final wanted = requested.isEmpty ? <String>{} : requested.split('|').toSet();
+  if (wanted.any((id) => !sourceCases.any((source) => source.id == id))) {
+    throw StateError('Unknown native provider diagnostic case.');
+  }
+  final selectedCases = sourceCases
+      .where((source) => wanted.isEmpty || wanted.contains(source.id))
+      .toList();
+  for (final source in selectedCases) {
     testWidgets(
       '${source.id}: real provider and native playback',
       (tester) async {
