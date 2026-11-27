@@ -482,17 +482,29 @@ class HostedSource {
           position = last + 1;
         }
       } else {
-        final data = await _read(id, request.headers.value('range'));
-        response.statusCode = data.status;
+        // Manifest offsets change when the local media URLs are serialized.
+        // Serve the complete generated representation, including for Range probes.
+        final requestedRange = request.headers.value('range');
+        final range = item.playlist || requestedRange == 'bytes=0-'
+            ? null
+            : requestedRange;
+        final data = await _read(id, range);
+        response.statusCode = item.playlist ? HttpStatus.ok : data.status;
         response.headers.set('Content-Type', data.type);
         response.contentLength = data.body.length;
-        if (data.range != null) {
+        if (!item.playlist && data.range != null) {
           response.headers.set('Content-Range', data.range!);
         }
         if (request.method != 'HEAD') response.add(data.body);
       }
       await response.close();
-    } catch (_) {
+    } catch (error) {
+      if (kDebugMode && epoch == _epoch && !_closed) {
+        final item = _resources[request.uri.pathSegments.lastOrNull];
+        debugPrint(
+          'NATIVE_HOSTED_DIAGNOSTIC ${jsonEncode({'stage': 'media_read_failed', 'resource': item?.playlist == true ? 'playlist' : 'media', 'code': error is ApiFailure ? error.code : 'LOCAL_READ', 'range_requested': request.headers.value('range') != null})}',
+        );
+      }
       try {
         response.statusCode = 502;
         response.write('A fonte não entregou o vídeo.');

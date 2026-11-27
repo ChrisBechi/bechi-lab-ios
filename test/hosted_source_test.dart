@@ -127,9 +127,12 @@ void main() {
             },
           ],
         });
-        final master = await (await (await client.getUrl(
-          p.url,
-        )).close()).transform(utf8.decoder).join();
+        final probe = await client.getUrl(p.url);
+        probe.headers.set('range', 'bytes=0-');
+        final manifestResponse = await probe.close();
+        expect(manifestResponse.statusCode, 200);
+        expect(manifestResponse.headers.value('Content-Range'), isNull);
+        final master = await manifestResponse.transform(utf8.decoder).join();
         expect(master, contains('LANGUAGE="por"'));
         expect(master, contains('SUBTITLES="cc"'));
         expect(master, isNot(contains('https://media.example')));
@@ -138,11 +141,12 @@ void main() {
               high,
             )).close()).transform(utf8.decoder).join();
         final part = Uri.parse(
-              playlist
-                  .split('\n')
-                  .firstWhere((line) => line.startsWith('http')),
-            ),
-            response = await (await client.getUrl(part)).close();
+          playlist.split('\n').firstWhere((line) => line.startsWith('http')),
+        );
+        final segmentProbe = await client.getUrl(part);
+        segmentProbe.headers.set('range', 'bytes=0-');
+        final response = await segmentProbe.close();
+        expect(response.statusCode, 200);
         expect(response.headers.contentType?.mimeType, 'video/mp2t');
         expect((await response.expand((b) => b).toList()).length, ts.length);
         expect(
