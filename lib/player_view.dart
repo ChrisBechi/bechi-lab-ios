@@ -196,8 +196,13 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     try {
       final data = await session.open(streamId: streamId);
       if (!mounted || closing || current != revision) return;
-      playback = data;
+      setState(() {
+        playback = data;
+        status = 'Iniciando o player do aparelho…';
+      });
       await configureNativeEngine(player);
+      if (!mounted || closing || current != revision) return;
+      setState(() => status = 'Abrindo o vídeo no player…');
       await player.open(
         Media(
           data.url,
@@ -206,8 +211,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
         ),
         play: true,
       );
-      mediaLoaded = true;
-      if (mounted && current == revision) setState(() => busy = false);
+      if (!mounted || closing || current != revision) return;
+      setState(() {
+        mediaLoaded = true;
+        busy = false;
+      });
       scheduleHide();
     } catch (e) {
       if (mounted && !closing && current == revision) {

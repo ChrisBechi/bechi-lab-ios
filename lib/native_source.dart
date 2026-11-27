@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 import 'hosted_source.dart';
 import 'bechi_api.dart';
@@ -28,12 +29,14 @@ class NativeSourceSession {
     this.api,
     this.source, {
     required this.onStatus,
+    this.lookupFailed = _lookupFailed,
     this.pollInterval = const Duration(seconds: 2),
     this.preparationTimeout = const Duration(minutes: 4),
   });
   final BechiApi api;
   final SourceCase source;
   final void Function(String) onStatus;
+  final Future<bool> Function(String host) lookupFailed;
   final Duration pollInterval, preparationTimeout;
   final scope = CancelScope();
   String? _torrent, _stream, _titleId, _superflixPath, _superflixSession;
@@ -51,6 +54,20 @@ class NativeSourceSession {
   String? get activeStreamId => _stream;
   bool get canShowSource => _hosted?.canShowSource == true;
   Future<void> showSource() async => _hosted?.showSource();
+
+  static Future<bool> _lookupFailed(String host) async {
+    try {
+      final addresses = await InternetAddress.lookup(
+        host,
+      ).timeout(const Duration(seconds: 5));
+      return addresses.isEmpty;
+    } on SocketException {
+      return true;
+    } on TimeoutException {
+      // A slow lookup alone does not establish that the name failed to resolve.
+      return false;
+    }
+  }
 
   Future<dynamic> _request(
     String path, {
@@ -147,7 +164,9 @@ class NativeSourceSession {
     var url = Uri.parse('${p['url']}');
     if (url.host == 'abyssplayer.com' || url.host == 'superflixapi.boats') {
       onStatus(
-        source.id == 'c7' ? 'Preparando o vídeo da C7…' : 'Analisando a fonte…',
+        source.id == 'c7'
+            ? 'Preparando o vídeo da C7…'
+            : 'Abrindo a SuperFlix pela rede deste aparelho…',
       );
       _hosted ??= HostedSource(onStatus: onStatus);
       try {
@@ -165,15 +184,30 @@ class NativeSourceSession {
           'source_height': local.height,
         };
       } on ApiFailure catch (error) {
-        if (error.code != 'SOURCE_DNS' ||
-            url.host != 'superflixapi.boats' ||
+        scope.check();
+        if (url.host != 'superflixapi.boats' ||
             !source.id.startsWith('superflix-')) {
           rethrow;
+        }
+        if (error.code != 'SOURCE_DNS') {
+          if (!const {
+            'SOURCE_NO_RESPONSE',
+            'SOURCE_CONNECTION',
+            'SOURCE_TIMEOUT',
+          }.contains(error.code)) {
+            rethrow;
+          }
+          onStatus(
+            'Conferindo o endereço da SuperFlix na rede deste aparelho…',
+          );
+          final failed = await lookupFailed(url.host);
+          scope.check();
+          if (!failed) rethrow;
         }
         await _hosted!.close();
         _hosted = null;
         scope.check();
-        onStatus('Preparando a SuperFlix pelo servidor do Bechi…');
+        onStatus('Esta rede não localizou a SuperFlix. Conectando pelo Bechi…');
         p = jsonMap(await _request('playback/$_stream'));
         final raw = Uri.tryParse('${p['url']}');
         final origin = Uri.parse(bechiOrigin);
@@ -196,7 +230,12 @@ class NativeSourceSession {
     }
     if (source.id.startsWith('superflix-') &&
         url.path.startsWith('/api/v1/superflix/start/')) {
-      await _prepareSuperflix(url);
+      try {
+        await _prepareSuperflix(url);
+      } catch (_) {
+        unawaited(_releaseSuperflix());
+        rethrow;
+      }
     }
     if (seasons.isNotEmpty) {
       p = {...p, 'next_stream_id': nextStreamId(_stream!)};
@@ -215,7 +254,9 @@ class NativeSourceSession {
         body: {'session_id': _leaseId, 'release': false},
       );
     }
-    await heartbeat();
+    // The ready response just refreshed this lease. Waiting for a second POST
+    // here would delay opening the player even though the video is ready.
+    if (_superflixPath == null || _cacheLease != null) await heartbeat();
     _heartbeat?.cancel();
     _heartbeat = Timer.periodic(
       const Duration(seconds: 12),
@@ -258,23 +299,49 @@ class NativeSourceSession {
     _superflixPath =
         'superflix/connection/${parts[parts.length - 2]}?${media.query}';
     _superflixSession = _uuid();
-    onStatus('Analisando a conexão da fonte…');
+    String? previousStatus;
+    var retries = 0;
+    var verificationPending = false;
     for (;;) {
+      if (_timedOut && verificationPending) {
+        scope.check();
+        throw const ApiFailure(
+          'VERIFICATION_FAILED',
+          'A verificação da SuperFlix no servidor não terminou a tempo.',
+        );
+      }
       _checkDeadline();
-      final state = jsonMap(
-        await _request(
-          _superflixPath!,
-          method: 'POST',
-          body: {
-            'session_id': _superflixSession,
-            'release': false,
-            'continueNext': false,
-          },
-        ),
-      );
+      Map<String, dynamic> state;
+      try {
+        state = jsonMap(
+          await _request(
+            _superflixPath!,
+            method: 'POST',
+            body: {
+              'session_id': _superflixSession,
+              'release': false,
+              'continueNext': false,
+            },
+          ),
+        );
+        retries = 0;
+      } on ApiFailure catch (error) {
+        _checkDeadline();
+        if (![500, 502, 503, 504].contains(error.status)) rethrow;
+        if (++retries > 2) {
+          throw ApiFailure(
+            error.code,
+            'O servidor do Bechi falhou ao consultar a abertura da SuperFlix.',
+            status: error.status,
+          );
+        }
+        previousStatus = null;
+        onStatus('O servidor do Bechi não respondeu. Repetindo a consulta…');
+        await scope.delay(pollInterval);
+        continue;
+      }
       if (state['ready'] == true) break;
-      if (state['verificationFailed'] == true ||
-          state['needsAction'] == true ||
+      if (state['needsAction'] == true ||
           jsonMap(state['mobile'])['needs_action'] == true) {
         throw const ApiFailure(
           'VERIFICATION',
@@ -290,6 +357,23 @@ class NativeSourceSession {
           'SUPERFLIX_SERVER',
           'O servidor do Bechi não conseguiu abrir o vídeo da SuperFlix.',
         );
+      }
+      // A verification load failure can recover within the same session.
+      // The server explicitly flags when the user needs to act.
+      verificationPending =
+          state['verificationFailed'] == true ||
+          state['state'] == 'verification_required';
+      final message = verificationPending
+          ? 'Aguardando a verificação da SuperFlix no servidor do Bechi…'
+          : switch (state['state']) {
+              'busy' => 'Aguardando o servidor do Bechi ficar disponível…',
+              'loading' =>
+                'O servidor do Bechi está carregando a página da SuperFlix…',
+              _ => 'Preparando a conexão com a SuperFlix no servidor do Bechi…',
+            };
+      if (message != previousStatus) {
+        onStatus(message);
+        previousStatus = message;
       }
       await scope.delay(pollInterval);
     }
@@ -476,22 +560,28 @@ class NativeSourceSession {
     }
   }
 
+  Future<void> _releaseSuperflix() async {
+    final path = _superflixPath;
+    final id = _superflixSession;
+    if (path == null || id == null) return;
+    _superflixPath = _superflixSession = null;
+    try {
+      await api.request(
+        path,
+        method: 'POST',
+        body: {'session_id': id, 'release': true, 'continueNext': false},
+      );
+    } on ApiFailure {
+      // The server expires a lease if the device is disconnected.
+    }
+  }
+
   Future<void> _releaseOwned() async {
     try {
       if (_torrent != null) {
         await api.request('torrent/sessions/$_torrent', method: 'DELETE');
       }
-      if (_superflixPath != null) {
-        await api.request(
-          _superflixPath!,
-          method: 'POST',
-          body: {
-            'session_id': _superflixSession,
-            'release': true,
-            'continueNext': false,
-          },
-        );
-      }
+      if (_superflixPath != null) await _releaseSuperflix();
       if (_cacheLease != null) {
         await api.request(
           'playback/$_cacheLease/lease',
@@ -513,7 +603,7 @@ class NativeSourceSession {
     } on ApiFailure {
       /* The server also expires abandoned leases. */
     }
-    _torrent = _cacheLease = _superflixPath = _superflixSession = null;
+    _torrent = _cacheLease = null;
     _original = null;
   }
 

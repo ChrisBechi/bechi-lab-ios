@@ -9,6 +9,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   private var target: [String: Any] = [:]
   private var pending: FlutterResult?
   private var timeout: DispatchWorkItem?
+  private var awaitingSourceResponse: String?
   private var verification: UINavigationController?
   private var channel: FlutterMethodChannel?
   private var reusable = false
@@ -44,6 +45,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       if kind == "superflix" { config["season"] = movie ? 0 : Int(components[2])!; config["episode"] = movie ? 0 : Int(components[3])! }
       guard let data = try? JSONSerialization.data(withJSONObject: config), let json = String(data: data, encoding: .utf8) else { fail(result, "SOURCE_INPUT"); return }
       let retainedFrame = reusable && target["root"] as? String == root ? framesForRoot(root) : nil
+      awaitingSourceResponse = nil
       reusable = false; sourceValidated = false
       pending?(FlutterError(code: "SOURCE_REPLACED", message: "A solicitação da fonte mudou.", details: nil))
       pending = result; target = config; frames.removeAll(); timeout?.cancel(); startedAt = Date()
@@ -66,6 +68,13 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       if let rootFrame = retainedFrame {
         view.callAsyncJavaScript("window.__bechiConfigureHosted(config)", arguments: ["config": config], in: rootFrame, in: .page) { _ in }
       } else {
+        if kind == "superflix" {
+          awaitingSourceResponse = epoch
+          DispatchQueue.main.asyncAfter(deadline: .now() + 45) { [weak self] in
+            guard let self = self, self.pending != nil, self.awaitingSourceResponse == epoch else { return }
+            self.finishFailure("SOURCE_NO_RESPONSE")
+          }
+        }
         var shell = URLComponents(string: origin + "/native-source-shell.html")!
         shell.fragment = root
         view.load(URLRequest(url: shell.url!))
@@ -93,7 +102,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
       }
     case "close":
       guard let args = call.arguments as? [String: Any], args["epoch"] as? String == target["epoch"] as? String else { result(nil); return }
-      timeout?.cancel(); timeout = nil
+      awaitingSourceResponse = nil; timeout?.cancel(); timeout = nil
       pending?(FlutterError(code: "SOURCE_CLOSED", message: "Reprodução encerrada.", details: nil)); pending = nil
       dismissVerification(); web?.stopLoading(); web?.removeFromSuperview()
       web?.configuration.userContentController.removeScriptMessageHandler(forName: "bechiHosted")
@@ -133,6 +142,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
   }
   private func showVerification(manual: Bool = false) {
     guard verification == nil, pending != nil, let view = web, let root = rootController() else { return }
+    awaitingSourceResponse = nil
     diagnostic(manual ? "source_opened_by_user" : "human")
     if !manual {
       channel?.invokeMethod("phase", arguments: ["epoch": target["epoch"] ?? "", "phase": "human"])
@@ -167,6 +177,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     let root = canonical == target["root"] as? String || canonical == target["url"] as? String
     let player = target["kind"] as? String == "c7" && root || players.contains(host) && url.path.range(of: "^/video/[a-f0-9]{32}$", options: .regularExpression) != nil
     guard root || player else { return }
+    awaitingSourceResponse = nil
     if type == "human" { showVerification(); return }
     if let key = data["document"] as? String, key.count < 100 { frames[key] = message.frameInfo }
     if type == "loaded" {
@@ -222,6 +233,7 @@ final class HostedSource: NSObject, FlutterPlugin, WKScriptMessageHandler, WKNav
     let canonical = "https://" + (url.host ?? "") + url.path
     let source = isC7Document(url) || canonical == target["root"] as? String || canonical == target["url"] as? String
     guard source else { decisionHandler(.allow); return }
+    awaitingSourceResponse = nil
     diagnostic("source_response", ["status": response.statusCode])
     let challenge = response.value(forHTTPHeaderField: "cf-mitigated")?.lowercased() == "challenge"
     if challenge {

@@ -80,6 +80,8 @@ class HostedSource {
         'SOURCE_UNAVAILABLE' =>
           'A fonte está indisponível. Tente novamente em instantes.',
         'SOURCE_TIMEOUT' => 'A fonte demorou a responder. Tente novamente.',
+        'SOURCE_NO_RESPONSE' =>
+          'A página de reprodução não respondeu no iPhone em 45 segundos. Verifique a conexão e tente novamente.',
         _ => 'A fonte não concluiu a preparação. Tente novamente.',
       });
     }
