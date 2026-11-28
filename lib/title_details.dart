@@ -377,6 +377,7 @@ class _TitleDetailsState extends State<TitleDetails> {
                             title['name'],
                             style: layout.heading.copyWith(height: 1.15),
                           ),
+                          const SizedBox(height: 9),
                           Text(
                             [
                               title['release_year'],
@@ -387,11 +388,16 @@ class _TitleDetailsState extends State<TitleDetails> {
                             ].whereType<Object>().join(' · '),
                             style: const TextStyle(fontSize: 12),
                           ),
-                          const SizedBox(height: 12),
-                          ExpandableSynopsis(
-                            title['synopsis'] ?? title['synopsis_short'] ?? '',
+                          const SizedBox(height: 8),
+                          DefaultTextStyle.merge(
+                            style: const TextStyle(fontSize: 14, height: 1.45),
+                            child: ExpandableSynopsis(
+                              title['synopsis'] ??
+                                  title['synopsis_short'] ??
+                                  '',
+                            ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           Wrap(
                             spacing: 8,
                             runSpacing: 8,

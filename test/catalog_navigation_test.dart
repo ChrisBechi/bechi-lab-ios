@@ -49,6 +49,34 @@ class CatalogApi extends BechiApi {
         ],
       };
     }
+    if (path.startsWith('facets?')) {
+      return {
+        'genres': [
+          {'name': 'Drama', 'slug': 'drama'},
+        ],
+        'years': [2025],
+        'ratings': ['12'],
+      };
+    }
+    if (path.startsWith('titles?')) {
+      return {
+        'items': [title],
+      };
+    }
+    if (path == 'live/catalog') {
+      return {
+        'categories': [
+          {'id': 1, 'name': 'Esportes'},
+        ],
+        'channels': [
+          {
+            'id': 'canal',
+            'name': 'Canal de teste',
+            'categories': [1],
+          },
+        ],
+      };
+    }
     if (path == 'titles/serie') return title;
     if (path == 'titles/123/seasons') {
       return [
@@ -137,6 +165,21 @@ void main() {
       expect(find.text('Continuar assistindo'), findsOneWidget);
       expect(find.text('Assistir novamente'), findsOneWidget);
       expect(find.text('Uma série'), findsOneWidget);
+      await tester.tap(find.text('Filmes'));
+      await tester.pumpAndSettle();
+      final genre = tester.getTopLeft(find.text('Gênero'));
+      final year = tester.getTopLeft(find.text('Ano'));
+      expect(genre.dy, closeTo(year.dy, .1));
+      expect(year.dx, greaterThan(genre.dx));
+      await tester.tap(find.text('Ao vivo'));
+      await tester.pumpAndSettle();
+      final liveCover = find.byType(AspectRatio).last;
+      final liveSize = tester.getSize(liveCover);
+      expect(
+        liveSize.width,
+        closeTo((config.$2.width * .46).clamp(140.0, 240.0), .1),
+      );
+      expect(liveSize.aspectRatio, closeTo(16 / 9, .01));
       expect(tester.takeException(), isNull);
     });
   }

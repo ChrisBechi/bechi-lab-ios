@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'bechi_api.dart';
@@ -41,7 +43,12 @@ class AdaptivePage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (apple(context)) {
       return CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(middle: title, trailing: action),
+        backgroundColor: MobileLayout.background,
+        navigationBar: CupertinoNavigationBar(
+          backgroundColor: MobileLayout.background,
+          middle: title,
+          trailing: action,
+        ),
         child: SafeArea(
           bottom: bottom == null,
           child: Material(
@@ -224,7 +231,7 @@ class _CatalogHomeState extends State<CatalogHome> {
         children: [
           IconButton(
             tooltip: 'Buscar',
-            icon: const Icon(Icons.search),
+            icon: const Icon(Icons.search, size: 19),
             onPressed: () => showPage(
               context,
               SearchPage(api: widget.api, onChange: refreshPersonal),
@@ -234,6 +241,7 @@ class _CatalogHomeState extends State<CatalogHome> {
             tooltip: 'Configurações',
             icon: Icon(
               apple(context) ? CupertinoIcons.gear : Icons.settings_outlined,
+              size: 19,
             ),
             onPressed: () => showPage(
               context,
@@ -276,56 +284,173 @@ class SearchPage extends StatefulWidget {
 }
 
 class _SearchPageState extends State<SearchPage> {
+  final controller = TextEditingController();
+  final historyStore = const FlutterSecureStorage();
+  static const historyKey = 'bechi.search.recent-titles.v1';
+  final recent = <String>[];
   String query = '';
   Timer? debounce;
+  late final genres = widget.api.request('genres');
+  @override
+  void initState() {
+    super.initState();
+    restoreHistory();
+  }
+
+  Future<void> restoreHistory() async {
+    try {
+      final items = jsonDecode(
+        await historyStore.read(key: historyKey) ?? '[]',
+      );
+      if (mounted && recent.isEmpty && items is List) {
+        setState(() => recent.addAll(items.whereType<String>().take(5)));
+      }
+    } on Exception {
+      return;
+    }
+  }
+
+  Future<void> remember(Item title) async {
+    final name = (title['name'] as String?)?.trim() ?? '';
+    if (name.isEmpty) return;
+    setState(() {
+      recent.removeWhere((v) => v.toLowerCase() == name.toLowerCase());
+      recent.insert(0, name);
+      if (recent.length > 5) recent.removeLast();
+    });
+    try {
+      await historyStore.write(key: historyKey, value: jsonEncode(recent));
+    } on Exception {
+      return;
+    }
+  }
+
   void change(String value) {
     debounce?.cancel();
-    debounce = Timer(const Duration(milliseconds: 300), () {
-      setState(() => query = value.trim());
+    debounce = Timer(const Duration(milliseconds: 250), () {
+      if (mounted) setState(() => query = value.trim());
     });
+  }
+
+  void selectTerm(String value) {
+    controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+    debounce?.cancel();
+    setState(() => query = value);
   }
 
   @override
   void dispose() {
     debounce?.cancel();
+    controller.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => AdaptivePage(
-    title: const Text('Buscar'),
-    body: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: apple(context)
-              ? CupertinoSearchTextField(
-                  placeholder: 'Filme ou série',
-                  autofocus: true,
-                  onChanged: change,
-                )
-              : TextField(
-                  autofocus: true,
-                  onChanged: change,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.search),
-                    hintText: 'Filme ou série',
-                  ),
+  Widget build(BuildContext context) {
+    final gutter = MobileLayout(context).gutter;
+    return AdaptivePage(
+      title: const MobileBrand(),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(gutter, 15, gutter, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Buscar',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
-        ),
-        if (query.isNotEmpty)
-          Expanded(
-            child: Feed(
-              key: ValueKey(query),
-              api: widget.api,
-              index: 5,
-              query: query,
-              onChange: widget.onChange,
+                const SizedBox(height: 10),
+                SizedBox(
+                  height: 44,
+                  child: apple(context)
+                      ? CupertinoSearchTextField(
+                          controller: controller,
+                          placeholder: 'Filmes, séries e mais',
+                          onChanged: change,
+                        )
+                      : TextField(
+                          controller: controller,
+                          onChanged: change,
+                          textInputAction: TextInputAction.search,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            filled: true,
+                            prefixIcon: const Icon(Icons.search, size: 18),
+                            hintText: 'Filmes, séries e mais',
+                            suffixIcon: query.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: 'Limpar busca',
+                                    icon: const Icon(Icons.close, size: 18),
+                                    onPressed: () => selectTerm(''),
+                                  ),
+                          ),
+                        ),
+                ),
+              ],
             ),
           ),
-      ],
-    ),
-  );
+          if (query.isEmpty)
+            Flexible(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(horizontal: gutter),
+                child: FutureBuilder(
+                  future: genres,
+                  builder: (ctx, snap) {
+                    final terms = recent.isEmpty
+                        ? jsonRows(
+                            snap.data,
+                          ).map((g) => g['name']).whereType<String>().take(8)
+                        : recent;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (recent.isNotEmpty)
+                          const Text(
+                            'Pesquisas recentes',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: [
+                            for (final term in terms)
+                              ActionChip(
+                                label: Text(
+                                  term,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                onPressed: () => selectTerm(term),
+                              ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          if (query.isNotEmpty)
+            Expanded(
+              child: Feed(
+                key: ValueKey(query),
+                api: widget.api,
+                index: 5,
+                query: query,
+                onChange: widget.onChange,
+                onTitleSelected: remember,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class Feed extends StatefulWidget {
@@ -335,12 +460,14 @@ class Feed extends StatefulWidget {
     required this.index,
     required this.onChange,
     this.query = '',
+    this.onTitleSelected,
     this.bottomInset = 0,
     this.active = true,
   });
   final BechiApi api;
   final int index;
   final String query;
+  final ValueChanged<Item>? onTitleSelected;
   final double bottomInset;
   final bool active;
   final VoidCallback onChange;
@@ -444,6 +571,7 @@ class _FeedState extends State<Feed> {
       );
       return;
     }
+    widget.onTitleSelected?.call(t);
     var changed = false;
     await showPage(
       context,
