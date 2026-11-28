@@ -2,12 +2,18 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'bechi_api.dart';
+import 'channel_preview.dart';
 import 'ios_catalog_tabs.dart';
+import 'web_mobile_style.dart';
 import 'expandable_synopsis.dart';
 import 'player_view.dart';
 import 'source_case.dart';
 part 'title_details.dart';
 part 'live_guide.dart';
+part 'catalog_highlights.dart';
+part 'catalog_filters.dart';
+part 'catalog_settings.dart';
+part 'catalog_detail_panel.dart';
 
 typedef Item = Map<String, dynamic>;
 bool apple(BuildContext context) =>
@@ -72,7 +78,8 @@ Widget actionButton(BuildContext context, String label, VoidCallback? action) =>
     : FilledButton(onPressed: action, child: Text(label));
 
 class Art extends StatelessWidget {
-  const Art(this.path, {super.key});
+  const Art(this.path, {super.key, this.alignment = Alignment.center});
+  final Alignment alignment;
   final dynamic path;
   @override
   Widget build(BuildContext context) {
@@ -87,6 +94,7 @@ class Art extends StatelessWidget {
     return Image.network(
       uri.toString(),
       fit: BoxFit.cover,
+      alignment: alignment,
       errorBuilder: (_, _, _) => missing,
     );
   }
@@ -101,6 +109,12 @@ class CatalogHome extends StatefulWidget {
 }
 
 class _CatalogHomeState extends State<CatalogHome> {
+  @override
+  void initState() {
+    super.initState();
+    widget.api.readPreferences().ignore();
+  }
+
   bool nativeTabs = false;
   bool checkedTabs = false;
   @override
@@ -149,11 +163,11 @@ class _CatalogHomeState extends State<CatalogHome> {
     final items = List.generate(
       names.length,
       (i) => BottomNavigationBarItem(
-        icon: Icon(apple(context) ? appleIcons[i] : icons[i]),
+        icon: Icon(apple(context) ? appleIcons[i] : icons[i], size: 19),
         label: names[i],
       ),
     );
-    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final wide = MediaQuery.sizeOf(context).width > 1000;
     final glass = apple(context) && nativeTabs;
     final inset = glass ? 74.0 + MediaQuery.viewPaddingOf(context).bottom : 0.0;
     final content = IndexedStack(
@@ -165,6 +179,7 @@ class _CatalogHomeState extends State<CatalogHome> {
                 key: views[i],
                 api: widget.api,
                 index: i,
+                active: tab == i,
                 bottomInset: inset,
                 onChange: refreshPersonal,
               )
@@ -183,6 +198,18 @@ class _CatalogHomeState extends State<CatalogHome> {
         : apple(context)
         ? CupertinoTabBar(items: items, currentIndex: tab, onTap: select)
         : NavigationBar(
+            height: 58,
+            backgroundColor: const Color(0xff101720),
+            indicatorColor: const Color(0xff17374d),
+            labelTextStyle: WidgetStatePropertyAll(
+              TextStyle(
+                fontSize: (MobileLayout(context).width * .0235).clamp(
+                  9.0,
+                  10.0,
+                ),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             selectedIndex: tab,
             onDestinationSelected: select,
             destinations: [
@@ -191,11 +218,7 @@ class _CatalogHomeState extends State<CatalogHome> {
             ],
           );
     return AdaptivePage(
-      title: Image.asset(
-        'assets/bechi-flix.webp',
-        height: 30,
-        semanticLabel: 'Bechi Flix',
-      ),
+      title: const MobileBrand(),
       action: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -207,12 +230,16 @@ class _CatalogHomeState extends State<CatalogHome> {
               SearchPage(api: widget.api, onChange: refreshPersonal),
             ),
           ),
-          if (tab == 4)
-            IconButton(
-              tooltip: 'Sair da conta',
-              icon: const Icon(Icons.logout),
-              onPressed: widget.onLogout,
+          IconButton(
+            tooltip: 'Configurações',
+            icon: Icon(
+              apple(context) ? CupertinoIcons.gear : Icons.settings_outlined,
             ),
+            onPressed: () => showPage(
+              context,
+              CatalogSettings(api: widget.api, onLogout: widget.onLogout),
+            ),
+          ),
         ],
       ),
       bottom: wide && !apple(context) ? null : bottom,
@@ -309,11 +336,13 @@ class Feed extends StatefulWidget {
     required this.onChange,
     this.query = '',
     this.bottomInset = 0,
+    this.active = true,
   });
   final BechiApi api;
   final int index;
   final String query;
   final double bottomInset;
+  final bool active;
   final VoidCallback onChange;
   @override
   State<Feed> createState() => _FeedState();
@@ -326,12 +355,15 @@ class _FeedState extends State<Feed> {
   bool paging = false;
   String? pageError;
   int generation = 0;
+  Map<String, String> filters = {};
+  String get filterQuery =>
+      filters.isEmpty ? '' : '&${Uri(queryParameters: filters).query}';
   String get path => [
     'home?rankings=1',
-    'titles?kind=movie&limit=42',
-    'titles?kind=series&limit=42',
+    'titles?kind=movie&limit=42$filterQuery',
+    'titles?kind=series&limit=42$filterQuery',
     'live/catalog',
-    'me/watchlist',
+    'me/library',
     'search?q=${Uri.encodeQueryComponent(widget.query)}&limit=42',
   ][widget.index];
   @override
@@ -342,24 +374,12 @@ class _FeedState extends State<Feed> {
 
   Future<dynamic> load() async {
     final current = ++generation;
-    if (widget.index == 0) {
-      final responses = await Future.wait([
-        widget.api.request(path),
-        widget.api.request('me/library').catchError((_) => <String, dynamic>{}),
-      ]);
-      final home = jsonMap(responses.first);
-      final continuing = jsonRows(jsonMap(responses.last)['continue_watching']);
-      return {
-        ...home,
-        'rails': [
-          if (continuing.isNotEmpty)
-            {'name': 'Continuar assistindo', 'items': continuing},
-          ...jsonRows(home['rails']),
-        ],
-      };
-    }
     final data = await widget.api.request(path);
-    if (current == generation) cursor = jsonMap(data)['next_cursor'] as String?;
+    if (current == generation) {
+      cursor =
+          jsonMap(data)[widget.index == 4 ? 'continue_cursor' : 'next_cursor']
+              as String?;
+    }
     return data;
   }
 
@@ -383,7 +403,9 @@ class _FeedState extends State<Feed> {
     try {
       final data = jsonMap(
         await widget.api.request(
-          '$path&cursor=${Uri.encodeQueryComponent(cursor!)}',
+          widget.index == 4
+              ? 'me/continue-watching?page=1&limit=40&cursor=${Uri.encodeQueryComponent(cursor!)}'
+              : '$path&cursor=${Uri.encodeQueryComponent(cursor!)}',
         ),
       );
       if (mounted && current == generation) {
@@ -401,7 +423,7 @@ class _FeedState extends State<Feed> {
     }
   }
 
-  Future<void> open(Item t) async {
+  Future<void> open(Item t, {bool play = false}) async {
     if (t['slug'] == null ||
         t['slug'] == '' ||
         jsonMap(t['ranking'])['available'] == false) {
@@ -428,13 +450,14 @@ class _FeedState extends State<Feed> {
       TitleDetails(
         api: widget.api,
         summary: t,
+        playOnOpen: play && t['kind'] != 'series',
         onLibraryChange: () => changed = true,
       ),
     );
     if (mounted && changed) widget.onChange();
   }
 
-  Widget poster(Item t) => Semantics(
+  Widget poster(Item t, {bool resume = false, bool grid = false}) => Semantics(
     button: true,
     label: t['name'],
     child: GestureDetector(
@@ -445,19 +468,64 @@ class _FeedState extends State<Feed> {
           Expanded(
             child: SizedBox.expand(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(7),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
                     Art(
-                      t['poster'] ??
+                      (resume
+                              ? t['resume_image']
+                              : t['poster'] ??
+                                    jsonMap(t['ranking'])['artwork']) ??
                           t['rail_cover'] ??
-                          jsonMap(t['ranking'])['artwork'],
+                          t['landscape_cover'] ??
+                          t['backdrop'] ??
+                          t['poster'],
                     ),
+                    if (t['drive_source'] == true || t['online_source'] == true)
+                      Positioned(
+                        right: 4,
+                        top: 6,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (t['drive_source'] == true)
+                              const _CoverBadge('Drive', Icons.cloud_outlined),
+                            if (t['online_source'] == true)
+                              const _CoverBadge('Online', Icons.wifi),
+                          ],
+                        ),
+                      ),
+                    if (jsonMap(t['ranking'])['available'] == false)
+                      const Positioned(
+                        bottom: 4,
+                        left: 4,
+                        right: 4,
+                        child: ColoredBox(
+                          color: Colors.black87,
+                          child: Text(
+                            'Indisponível',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 10),
+                          ),
+                        ),
+                      ),
+                    if (resume &&
+                        t['duration_ms'] is num &&
+                        t['duration_ms'] > 0 &&
+                        t['position_ms'] is num)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: LinearProgressIndicator(
+                          value: (t['position_ms'] / t['duration_ms'])
+                              .clamp(0, 1)
+                              .toDouble(),
+                        ),
+                      ),
                     if (jsonMap(t['ranking'])['position'] case final num rank)
                       Positioned(
-                        left: 4,
-                        bottom: 4,
+                        left: 6,
+                        top: 8,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
                             color: Colors.black87,
@@ -483,8 +551,27 @@ class _FeedState extends State<Feed> {
               ),
             ),
           ),
-          const SizedBox(height: 5),
-          Text(t['name'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis),
+          SizedBox(height: grid ? 8 : 6),
+          SizedBox(
+            height:
+                MediaQuery.textScalerOf(context).scale(grid ? 12 : 11) *
+                (grid ? 1.3 : 1.28) *
+                2,
+            child: Text(
+              t['name'] ?? '',
+              style: grid
+                  ? MobileLayout.cardLabel.copyWith(fontSize: 12, height: 1.3)
+                  : MobileLayout.cardLabel,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (resume && t['episode_number'] != null)
+            Text(
+              'T${t['season_number']} · EP ${t['episode_number']}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
         ],
       ),
     ),
@@ -500,10 +587,30 @@ class _FeedState extends State<Feed> {
         return Center(child: actionButton(context, 'Tentar novamente', reload));
       }
       final data = jsonMap(snap.data);
-      final spacing = MediaQuery.sizeOf(context).width >= 700 ? 24.0 : 16.0;
-      if (widget.index == 0) {
-        final hero = jsonRows(data['hero']).firstOrNull;
-        final rails = jsonRows(data['rails']);
+      final layout = MobileLayout(context);
+      final spacing = layout.gutter;
+      if (widget.index == 0 || widget.index == 4) {
+        final library = widget.index == 4;
+        final hero = library ? <Item>[] : highlights(data);
+        final continuing = <String, Item>{
+          for (final t in [...jsonRows(data['continue_watching']), ...extra])
+            t['id'].toString(): t,
+        }.values.toList();
+        final rails = library
+            ? <Item>[
+                {'name': 'Minha lista', 'items': data['watchlist']},
+                if (continuing.isNotEmpty)
+                  {
+                    'id': 'continue',
+                    'name': 'Continuar assistindo',
+                    'items': continuing,
+                  },
+                if (jsonRows(data['watch_again']).isNotEmpty)
+                  {'name': 'Assistir novamente', 'items': data['watch_again']},
+              ]
+            : jsonRows(data['rails'])
+                  .where((r) => r['id'] != 'continue' && r['id'] != 'watchlist')
+                  .toList();
         return ListView.builder(
           padding: widget.bottomInset == 0
               ? null
@@ -511,67 +618,74 @@ class _FeedState extends State<Feed> {
           itemCount: rails.length + 1,
           itemBuilder: (context, i) {
             if (i == 0) {
-              return hero == null
+              return library
                   ? const SizedBox.shrink()
-                  : GestureDetector(
-                      onTap: () => open(hero),
-                      child: AspectRatio(
-                        aspectRatio: 1.85,
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Art(
-                              hero['backdrop'] ??
-                                  hero['landscape_cover'] ??
-                                  hero['poster'],
-                            ),
-                            const DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Colors.transparent, Colors.black87],
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              left: spacing,
-                              right: spacing,
-                              bottom: 16,
-                              child: Text(
-                                hero['name'],
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.headlineMedium,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                  : CatalogHighlights(
+                      titles: hero,
+                      active: widget.active,
+                      onDetails: open,
+                      onPlay: (t) => open(t, play: true),
                     );
             }
             final rail = rails[i - 1];
             final rows = jsonRows(rail['items']);
+            if (rows.isEmpty && library) {
+              return const ListTile(
+                title: Text('Minha lista'),
+                subtitle: Text(
+                  'Adicione títulos à sua lista para encontrá-los aqui.',
+                ),
+              );
+            }
             if (rows.isEmpty) return const SizedBox.shrink();
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Padding(
-                  padding: EdgeInsets.fromLTRB(spacing, 20, spacing, 10),
+                  padding: EdgeInsets.fromLTRB(spacing, 20, spacing, 8),
                   child: Text(
                     rail['name'],
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: TextStyle(
+                      fontSize: layout.railTitle,
+                      height: 1.2,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -.02 * layout.railTitle,
+                    ),
                   ),
                 ),
                 SizedBox(
-                  height: 178,
+                  height:
+                      (rail['id'] == 'continue'
+                          ? layout.previewWidth * 9 / 16
+                          : layout.coverWidth * 1.5) +
+                      6 +
+                      MediaQuery.textScalerOf(context).scale(11) *
+                          1.28 *
+                          (rail['id'] == 'continue' ? 3 : 2),
                   child: ListView.separated(
                     padding: EdgeInsets.symmetric(horizontal: spacing),
                     scrollDirection: Axis.horizontal,
-                    itemCount: rows.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 10),
-                    itemBuilder: (_, i) =>
-                        SizedBox(width: 105, child: poster(rows[i])),
+                    itemCount:
+                        rows.length +
+                        (rail['id'] == 'continue' && cursor != null ? 1 : 0),
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (_, i) => i == rows.length
+                        ? Center(
+                            child: actionButton(
+                              context,
+                              pageError ?? 'Carregar mais',
+                              paging ? null : more,
+                            ),
+                          )
+                        : SizedBox(
+                            width: rail['id'] == 'continue'
+                                ? layout.previewWidth
+                                : layout.coverWidth,
+                            child: poster(
+                              rows[i],
+                              resume: rail['id'] == 'continue',
+                            ),
+                          ),
                   ),
                 ),
               ],
@@ -590,7 +704,8 @@ class _FeedState extends State<Feed> {
         ...jsonRows(widget.index == 4 ? snap.data : data['items']),
         ...extra,
       ];
-      if (items.isEmpty) {
+      final browse = widget.index == 1 || widget.index == 2;
+      if (items.isEmpty && !browse) {
         return Center(
           child: Text(
             widget.index == 4
@@ -601,17 +716,56 @@ class _FeedState extends State<Feed> {
       }
       return CustomScrollView(
         slivers: [
+          if (browse)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(spacing, 16, spacing, 9),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.index == 1 ? 'Filmes' : 'Séries',
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    CatalogFilters(
+                      api: widget.api,
+                      kind: widget.index == 1 ? 'movie' : 'series',
+                      initial: filters,
+                      onChange: (next) {
+                        filters = next;
+                        reload();
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          if (browse && items.isEmpty)
+            const SliverToBoxAdapter(
+              child: Center(
+                child: Text('Nenhum conteúdo disponível para esses filtros.'),
+              ),
+            ),
           SliverPadding(
             padding: EdgeInsets.all(spacing),
             sliver: SliverGrid.builder(
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 155,
-                childAspectRatio: 0.60,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 14,
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: layout.columns,
+                mainAxisExtent:
+                    ((layout.width - 2 * spacing - 9 * (layout.columns - 1)) /
+                            layout.columns) *
+                        1.5 +
+                    8 +
+                    MediaQuery.textScalerOf(context).scale(12) * 2 * 1.3,
+                crossAxisSpacing: 9,
+                mainAxisSpacing: 9,
               ),
               itemCount: items.length,
-              itemBuilder: (_, i) => poster(items[i]),
+              itemBuilder: (_, i) => poster(items[i], grid: true),
             ),
           ),
           if (cursor != null)
@@ -629,5 +783,35 @@ class _FeedState extends State<Feed> {
         ],
       );
     },
+  );
+}
+
+class _CoverBadge extends StatelessWidget {
+  const _CoverBadge(this.label, this.icon);
+  final String label;
+  final IconData icon;
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(bottom: 3),
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+    decoration: BoxDecoration(
+      color: const Color(0xff164762),
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 10, color: Colors.white),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+      ],
+    ),
   );
 }

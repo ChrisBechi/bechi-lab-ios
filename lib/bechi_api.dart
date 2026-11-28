@@ -80,6 +80,9 @@ typedef ApiTransport =
     );
 
 class BechiApi {
+  Map<String, dynamic> preferences = {};
+  Future<Map<String, dynamic>> readPreferences() async =>
+      preferences = jsonMap(await request('me/preferences'));
   BechiApi({SessionStore? store, this.transport})
     : store = store ?? NativeSessionStore();
   final SessionStore store;

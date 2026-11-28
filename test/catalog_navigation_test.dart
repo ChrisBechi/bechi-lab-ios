@@ -38,7 +38,17 @@ class CatalogApi extends BechiApi {
         ],
       };
     }
-    if (path == 'me/library') return {'continue_watching': []};
+    if (path == 'me/library') {
+      return {
+        'watchlist': saved ? [title] : [],
+        'continue_watching': [
+          {...title, 'name': 'Retomar o episódio'},
+        ],
+        'watch_again': [
+          {...title, 'name': 'Rever o episódio'},
+        ],
+      };
+    }
     if (path == 'titles/serie') return title;
     if (path == 'titles/123/seasons') {
       return [
@@ -95,14 +105,25 @@ void main() {
         find.byType(
           config.$1 == TargetPlatform.iOS
               ? CupertinoTabBar
-              : config.$2.width >= 700
+              : config.$2.width > 1000
               ? NavigationRail
               : NavigationBar,
         ),
         findsOneWidget,
       );
       expect(find.text('Em alta na Netflix'), findsOneWidget);
+      expect(find.text('Continuar assistindo'), findsNothing);
       expect(find.text('#1'), findsOneWidget);
+      final cover = find
+          .ancestor(of: find.text('#1'), matching: find.byType(ClipRRect))
+          .first;
+      final width = (config.$2.width * .26).clamp(92.0, 150.0);
+      expect(tester.getSize(cover).width, closeTo(width, .1));
+      expect(tester.getSize(cover).height, closeTo(width * 1.5, .1));
+      expect(
+        tester.getTopLeft(cover).dx,
+        closeTo((config.$2.width * .036).clamp(12.0, 24.0), .1),
+      );
       await tester.tap(find.text('Uma série'));
       await tester.pumpAndSettle();
       expect(find.text('Assistir T1 EP1'), findsOneWidget);
@@ -113,6 +134,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Minha lista'));
       await tester.pumpAndSettle();
+      expect(find.text('Continuar assistindo'), findsOneWidget);
+      expect(find.text('Assistir novamente'), findsOneWidget);
       expect(find.text('Uma série'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

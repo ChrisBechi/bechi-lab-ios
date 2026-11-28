@@ -115,6 +115,16 @@ class NativePlayerPageState extends State<NativePlayerPage>
   final startup = Stopwatch();
   int? firstFrameMs;
   bool mediaLoaded = false;
+  bool matchesLanguage(dynamic preference, String? language, String? title) {
+    final tag = (language ?? '').toLowerCase().split('-').first;
+    final label = (title ?? '').toLowerCase();
+    return switch (preference) {
+      'en' => tag == 'en' || tag == 'eng' || label.contains('english'),
+      'pt-BR' => tag == 'pt' || tag == 'por' || label.contains('portugu'),
+      _ => false,
+    };
+  }
+
   @override
   void initState() {
     super.initState();
@@ -174,22 +184,23 @@ class NativePlayerPageState extends State<NativePlayerPage>
     subscriptions.add(
       player.stream.tracks.listen((tracks) {
         if (!audioChosen) {
+          final language = widget.api.preferences['audio_language'] ?? 'pt-BR';
           final preferred = tracks.audio
-              .where(
-                (t) =>
-                    RegExp(
-                      r'^(pt|por)(-|$)',
-                      caseSensitive: false,
-                    ).hasMatch(t.language ?? '') ||
-                    RegExp(
-                      'portugu',
-                      caseSensitive: false,
-                    ).hasMatch(t.title ?? ''),
-              )
+              .where((t) => matchesLanguage(language, t.language, t.title))
               .firstOrNull;
           if (preferred != null) {
             audioChosen = true;
             unawaited(player.setAudioTrack(preferred));
+          }
+        }
+        if (subtitleSelection == null) {
+          final language = widget.api.preferences['subtitle_language'];
+          final preferred = tracks.subtitle
+              .where((t) => matchesLanguage(language, t.language, t.title))
+              .firstOrNull;
+          if (preferred != null) {
+            subtitleSelection = preferred.id;
+            unawaited(selectNativeSubtitle(player, preferred));
           }
         }
         if (mounted) setState(() {});
@@ -198,7 +209,9 @@ class NativePlayerPageState extends State<NativePlayerPage>
     subscriptions.add(
       player.stream.completed.listen((completed) {
         if (!mounted || closing || busy || !mediaLoaded) return;
-        if (completed && playback?.metadata['next_stream_id'] is String) {
+        if (completed &&
+            widget.api.preferences['autoplay_next'] != false &&
+            playback?.metadata['next_stream_id'] is String) {
           unawaited(openNext());
         } else {
           setState(() {});
@@ -239,7 +252,9 @@ class NativePlayerPageState extends State<NativePlayerPage>
         Media(
           data.url,
           httpHeaders: data.headers,
-          start: data.isLive ? null : data.position,
+          start: data.isLive || widget.api.preferences['resume'] == false
+              ? null
+              : data.position,
         ),
         play: true,
       );
@@ -633,6 +648,18 @@ class NativePlayerPageState extends State<NativePlayerPage>
                     fit: StackFit.expand,
                     children: [
                       Video(
+                        subtitleViewConfiguration: SubtitleViewConfiguration(
+                          style: const SubtitleViewConfiguration().style
+                              .copyWith(
+                                fontSize: switch (widget
+                                    .api
+                                    .preferences['subtitle_size']) {
+                                  'small' => 14.0,
+                                  'large' => 21.0,
+                                  _ => 17.0,
+                                },
+                              ),
+                        ),
                         key: const Key('native-video'),
                         controller: controller,
                         controls: NoVideoControls,

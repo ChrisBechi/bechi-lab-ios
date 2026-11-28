@@ -6,8 +6,10 @@ class TitleDetails extends StatefulWidget {
     required this.api,
     required this.summary,
     this.onLibraryChange,
+    this.playOnOpen = false,
   });
   final VoidCallback? onLibraryChange;
+  final bool playOnOpen;
   final BechiApi api;
   final Item summary;
   @override
@@ -21,12 +23,62 @@ class _TitleDetailsState extends State<TitleDetails> {
   int seasonIndex = 0, episodeIndex = 0, sourceIndex = 0;
   bool? favorite;
   bool saving = false;
+  int? reaction;
+  bool ratingBusy = false;
   String? notice;
   @override
   void initState() {
     super.initState();
     ready = load();
     loadFavorite();
+    loadReaction();
+  }
+
+  Future<void> loadReaction() async {
+    try {
+      final ratings = jsonRows(await widget.api.request('me/reactions'));
+      if (mounted) {
+        setState(
+          () => reaction =
+              ratings
+                      .where((r) => r['title_id'] == widget.summary['id'])
+                      .firstOrNull?['reaction']
+                  as int? ??
+              0,
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => notice = 'Não foi possível consultar suas avaliações.');
+      }
+    }
+  }
+
+  Future<void> rate(int value) async {
+    if (ratingBusy) return;
+    if (reaction == null) {
+      await loadReaction();
+      if (reaction == null || !mounted) return;
+    }
+    final selection = reaction == value ? 0 : value;
+    setState(() => ratingBusy = true);
+    try {
+      await widget.api.request(
+        'me/reactions/${title['id']}',
+        method: 'PUT',
+        body: {'reaction': selection},
+      );
+      if (mounted) {
+        setState(() => reaction = selection);
+        widget.onLibraryChange?.call();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => notice = 'Não foi possível salvar a avaliação.');
+      }
+    } finally {
+      if (mounted) setState(() => ratingBusy = false);
+    }
   }
 
   Future<void> loadFavorite() async {
@@ -67,6 +119,11 @@ class _TitleDetailsState extends State<TitleDetails> {
                 (title['episode_number'] ?? widget.summary['episode_number']),
       );
       episodeIndex = e < 0 ? 0 : e;
+    }
+    if (widget.playOnOpen && sources.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ModalRoute.of(context)?.isCurrent == true) play();
+      });
     }
   }
 
@@ -191,7 +248,7 @@ class _TitleDetailsState extends State<TitleDetails> {
 
   @override
   Widget build(BuildContext context) => AdaptivePage(
-    title: const Text('Detalhes'),
+    title: const MobileBrand(),
     body: FutureBuilder(
       future: ready,
       builder: (context, snap) {
@@ -208,6 +265,7 @@ class _TitleDetailsState extends State<TitleDetails> {
           );
         }
         final eps = episodes, streams = sources;
+        final layout = MobileLayout(context);
         return Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 850),
@@ -216,51 +274,108 @@ class _TitleDetailsState extends State<TitleDetails> {
               itemBuilder: (context, i) {
                 if (i > 0) {
                   final ep = eps[i - 1];
-                  return ListTile(
-                    selected: episodeIndex == i - 1,
-                    leading: SizedBox(
-                      width: 72,
-                      height: 46,
-                      child: Art(ep['thumbnail_url']),
+                  return Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: layout.gutter,
+                      vertical: 6,
                     ),
-                    title: Text('EP ${ep['episode_number']} · ${ep['name']}'),
-                    subtitle: (ep['synopsis'] ?? ep['synopsis_short']) == null
-                        ? null
-                        : ExpandableSynopsis(
-                            ep['synopsis'] ?? ep['synopsis_short'],
-                            collapsedLines: 2,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          episodeIndex = i - 1;
+                          sourceIndex = 0;
+                        });
+                        if (sources.isNotEmpty) play();
+                      },
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Flexible(
+                            flex: 38,
+                            child: AspectRatio(
+                              aspectRatio: 16 / 9,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(7),
+                                child: Art(ep['thumbnail_url']),
+                              ),
+                            ),
                           ),
-                    trailing: const Icon(Icons.play_arrow),
-                    onTap: () {
-                      setState(() {
-                        episodeIndex = i - 1;
-                        sourceIndex = 0;
-                      });
-                      if (sources.isNotEmpty) play();
-                    },
+                          const SizedBox(width: 9),
+                          Flexible(
+                            flex: 62,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'EP ${ep['episode_number']} · ${ep['name']}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                DefaultTextStyle.merge(
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    height: 1.4,
+                                  ),
+                                  child: ExpandableSynopsis(
+                                    ep['synopsis'] ??
+                                        ep['synopsis_short'] ??
+                                        '',
+                                    collapsedLines: 3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   );
                 }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                return Stack(
                   children: [
-                    AspectRatio(
-                      aspectRatio: 2.25,
-                      child: SizedBox.expand(
-                        child: Art(
-                          title['backdrop'] ??
-                              title['landscape_cover'] ??
-                              title['poster'],
-                        ),
+                    SizedBox(
+                      width: double.infinity,
+                      height: layout.artHeight,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          Art(
+                            title['backdrop'] ??
+                                title['landscape_cover'] ??
+                                title['poster'],
+                            alignment: const Alignment(.24, -.3),
+                          ),
+                          const DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [
+                                  Colors.transparent,
+                                  MobileLayout.background,
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.fromLTRB(
+                        layout.gutter,
+                        layout.artCopy,
+                        layout.gutter,
+                        18,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             title['name'],
-                            style: Theme.of(context).textTheme.headlineMedium,
+                            style: layout.heading.copyWith(height: 1.15),
                           ),
                           Text(
                             [
@@ -270,6 +385,7 @@ class _TitleDetailsState extends State<TitleDetails> {
                                 title['genres'],
                               ).map((g) => g['name']),
                             ].whereType<Object>().join(' · '),
+                            style: const TextStyle(fontSize: 12),
                           ),
                           const SizedBox(height: 12),
                           ExpandableSynopsis(
@@ -302,6 +418,44 @@ class _TitleDetailsState extends State<TitleDetails> {
                             ],
                           ),
                           if (notice != null) Text(notice!),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final entry in {
+                                1: 'Gostei',
+                                2: 'Amei',
+                              }.entries)
+                                FilterChip(
+                                  label: Text(entry.value),
+                                  selected: reaction == entry.key,
+                                  onSelected: ratingBusy
+                                      ? null
+                                      : (_) => rate(entry.key),
+                                ),
+                            ],
+                          ),
+                          Wrap(
+                            children: [
+                              for (final name in [
+                                'Títulos semelhantes',
+                                'Idioma e legendas',
+                                'Créditos e mais informações',
+                              ])
+                                TextButton(
+                                  onPressed: () => showPage(
+                                    context,
+                                    DetailPanel(
+                                      api: widget.api,
+                                      title: title,
+                                      panel: name,
+                                      streams: streams,
+                                      onLibraryChange: widget.onLibraryChange,
+                                    ),
+                                  ),
+                                  child: Text(name),
+                                ),
+                            ],
+                          ),
                           if (streams.isEmpty)
                             const Text('Nenhuma fonte disponível.'),
                           if (streams.length > 1)
