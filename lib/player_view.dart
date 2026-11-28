@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -96,6 +98,12 @@ class NativePlayerPageState extends State<NativePlayerPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]),
+    );
     subscriptions.add(
       player.stream.position.listen((v) {
         if (closing) return;
@@ -291,6 +299,11 @@ class NativePlayerPageState extends State<NativePlayerPage> {
 
   @override
   void dispose() {
+    unawaited(
+      SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+      ]),
+    );
     closing = true;
     revision++;
     hideTimer?.cancel();
@@ -305,11 +318,39 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     super.dispose();
   }
 
+  Future<T?> _playerSheet<T>({
+    required BuildContext context,
+    required WidgetBuilder builder,
+    bool isScrollControlled = false,
+  }) {
+    if (Theme.of(context).platform == TargetPlatform.iOS) {
+      return showCupertinoModalPopup<T>(
+        context: context,
+        builder: (ctx) => CupertinoPopupSurface(
+          child: Material(
+            color: Colors.transparent,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(ctx).height * .82,
+              ),
+              child: builder(ctx),
+            ),
+          ),
+        ),
+      );
+    }
+    return showModalBottomSheet<T>(
+      context: context,
+      builder: builder,
+      isScrollControlled: isScrollControlled,
+    );
+  }
+
   Future<void> chooseQuality() async {
     final p = playback;
     if (p == null || p.variants.isEmpty || busy) return;
     hideTimer?.cancel();
-    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+    final picked = await _playerSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
       builder: (context) => SafeArea(
@@ -380,7 +421,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     final tracks = player.state.tracks.audio
         .where((t) => t.id != 'no' && t.id != 'auto')
         .toList();
-    final track = await showModalBottomSheet<AudioTrack>(
+    final track = await _playerSheet<AudioTrack>(
       context: context,
       builder: (context) => SafeArea(
         child: ListView(
@@ -409,7 +450,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
     final tracks = player.state.tracks.subtitle
         .where((t) => t.id != 'no' && t.id != 'auto')
         .toList();
-    final track = await showModalBottomSheet<SubtitleTrack>(
+    final track = await _playerSheet<SubtitleTrack>(
       context: context,
       builder: (context) => SafeArea(
         child: ListView(
@@ -459,7 +500,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
   Future<void> chooseEpisode() async {
     if (session.seasons.isEmpty || busy) return;
     hideTimer?.cancel();
-    final id = await showModalBottomSheet<String>(
+    final id = await _playerSheet<String>(
       context: context,
       isScrollControlled: true,
       builder: (context) => SafeArea(
@@ -628,9 +669,10 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                           child: Row(
                             children: [
                               IconButton(
+                                key: const Key('player-back'),
                                 tooltip: 'Voltar',
                                 onPressed: leave,
-                                icon: const Icon(Icons.arrow_back),
+                                icon: const BackButtonIcon(),
                               ),
                               Expanded(
                                 child: Text(
@@ -697,7 +739,7 @@ class NativePlayerPageState extends State<NativePlayerPage> {
                                       style: const TextStyle(fontSize: 11),
                                     ),
                                     Expanded(
-                                      child: Slider(
+                                      child: Slider.adaptive(
                                         key: const Key('player-seek'),
                                         min: 0,
                                         max: total,

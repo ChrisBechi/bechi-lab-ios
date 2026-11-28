@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter/services.dart';
+import 'catalog.dart';
 import 'package:media_kit/media_kit.dart';
 import 'bechi_api.dart';
-import 'player_view.dart';
-import 'source_case.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+  ]);
   MediaKit.ensureInitialized();
   runApp(const BechiNativeApp());
 }
@@ -21,7 +26,10 @@ class _BechiNativeAppState extends State<BechiNativeApp> {
   late final Future<bool> restored = api.restore();
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'Bechi Native',
+    title: 'Bechi Flix',
+    locale: const Locale('pt', 'BR'),
+    supportedLocales: const [Locale('pt', 'BR')],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
     debugShowCheckedModeBanner: false,
     theme: ThemeData(
       brightness: Brightness.dark,
@@ -38,7 +46,7 @@ class _BechiNativeAppState extends State<BechiNativeApp> {
           );
         }
         return api.authenticated
-            ? NativeSources(
+            ? CatalogHome(
                 api: api,
                 onLogout: () async {
                   await api.logout();
@@ -94,8 +102,8 @@ class _NativeLoginState extends State<NativeLogin> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('BECHI · NATIVO 0.2.0')),
+  Widget build(BuildContext context) => AdaptivePage(
+    title: Image.asset('assets/bechi-flix.webp', height: 32),
     body: Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
@@ -107,25 +115,45 @@ class _NativeLoginState extends State<NativeLogin> {
               'Entre no Bechi Flix',
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 12),
-            const Text('Player nativo, com os controles feitos em Flutter.'),
             const SizedBox(height: 24),
-            TextField(
-              key: const Key('login-email'),
-              controller: email,
-              keyboardType: TextInputType.emailAddress,
-              autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(labelText: 'E-mail'),
-            ),
+            if (apple(context))
+              CupertinoTextField(
+                key: const Key('login-email'),
+                controller: email,
+                placeholder: 'E-mail',
+                padding: const EdgeInsets.all(14),
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                autocorrect: false,
+              )
+            else
+              TextField(
+                key: const Key('login-email'),
+                controller: email,
+                keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
+                decoration: const InputDecoration(labelText: 'E-mail'),
+              ),
             const SizedBox(height: 12),
-            TextField(
-              key: const Key('login-password'),
-              controller: password,
-              obscureText: true,
-              autofillHints: const [AutofillHints.password],
-              onSubmitted: (_) => login(),
-              decoration: const InputDecoration(labelText: 'Senha'),
-            ),
+            if (apple(context))
+              CupertinoTextField(
+                key: const Key('login-password'),
+                controller: password,
+                placeholder: 'Senha',
+                padding: const EdgeInsets.all(14),
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                onSubmitted: (_) => login(),
+              )
+            else
+              TextField(
+                key: const Key('login-password'),
+                controller: password,
+                obscureText: true,
+                autofillHints: const [AutofillHints.password],
+                onSubmitted: (_) => login(),
+                decoration: const InputDecoration(labelText: 'Senha'),
+              ),
             if (error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -135,88 +163,20 @@ class _NativeLoginState extends State<NativeLogin> {
                 ),
               ),
             const SizedBox(height: 24),
-            FilledButton(
-              onPressed: busy ? null : login,
-              child: Text(busy ? 'Entrando…' : 'Entrar'),
-            ),
-            const SizedBox(height: 24),
-            const Text('Conferir os codecs do aparelho'),
-            for (final source in codecCases)
-              ListTile(
-                title: Text(source.name),
-                trailing: const Icon(Icons.play_arrow),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        NativePlayerPage(api: widget.api, source: source),
-                  ),
-                ),
+            if (Theme.of(context).platform == TargetPlatform.iOS)
+              CupertinoButton.filled(
+                onPressed: busy ? null : login,
+                child: Text(busy ? 'Entrando…' : 'Entrar'),
+              )
+            else
+              FilledButton(
+                onPressed: busy ? null : login,
+                child: Text(busy ? 'Entrando…' : 'Entrar'),
               ),
+            const SizedBox(height: 24),
           ],
         ),
       ),
-    ),
-  );
-}
-
-class NativeSources extends StatelessWidget {
-  const NativeSources({super.key, required this.api, required this.onLogout});
-  final BechiApi api;
-  final Future<void> Function() onLogout;
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('BECHI · NATIVO 0.2.0'),
-      actions: [
-        IconButton(
-          tooltip: 'Sair da conta',
-          icon: const Icon(Icons.logout),
-          onPressed: onLogout,
-        ),
-      ],
-    ),
-    body: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'Fontes de reprodução',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Cada fonte usa o motor nativo e os mesmos controles do app.',
-        ),
-        const SizedBox(height: 16),
-        for (final source in [...sourceCases, ...codecCases])
-          Card(
-            child: ListTile(
-              key: Key('source-${source.id}'),
-              leading: Icon(
-                source.isLive ? Icons.live_tv : Icons.play_circle_outline,
-              ),
-              title: Text(source.name),
-              subtitle: Text(source.example),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => NativePlayerPage(api: api, source: source),
-                ),
-              ),
-            ),
-          ),
-        const SizedBox(height: 16),
-        const Text(
-          'Motor nativo: libmpv / FFmpeg. Interface: Flutter.',
-          style: TextStyle(fontSize: 12, color: Colors.white54),
-        ),
-        TextButton(
-          onPressed: () => showLicensePage(
-            context: context,
-            applicationName: 'Bechi Native',
-          ),
-          child: const Text('Licenças de código aberto'),
-        ),
-      ],
     ),
   );
 }

@@ -10,11 +10,14 @@ class SourceCase {
     this.season = 1,
     this.episode = 1,
     this.liveId,
+    this.isEvent = false,
     this.asset,
+    this.preferredStreamId,
   });
   final String id, name, example, sourceType;
-  final String? slug, liveId, asset;
+  final String? slug, liveId, asset, preferredStreamId;
   final int season, episode;
+  final bool isEvent;
   bool get isLive => liveId != null;
 }
 
@@ -216,9 +219,18 @@ Map<String, dynamic>? selectSource(
   SourceCase source,
   List<Map<String, dynamic>> streams,
 ) {
+  final exact = streams
+      .where(
+        (s) =>
+            source.preferredStreamId != null &&
+            s['id'] == source.preferredStreamId &&
+            s['available'] != false,
+      )
+      .firstOrNull;
+  if (exact != null) return exact;
   for (final stream in streams) {
     if (stream['available'] == false ||
-        stream['source_type'] != source.sourceType) {
+        (stream['source_type'] ?? 'media_server') != source.sourceType) {
       continue;
     }
     if (source.id == 'c7' && !'${stream['name']}'.startsWith('C7')) continue;

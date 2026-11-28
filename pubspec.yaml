@@ -1,12 +1,15 @@
 name: bechi_player_prototype
 description: "Player nativo Bechi Flix com controles Flutter e codecs locais."
 publish_to: 'none'
-version: 0.2.0+7
+version: 0.2.0+8
 
 environment:
   sdk: ^3.12.2
 
 dependencies:
+  flutter_localizations:
+    sdk: flutter
+  cupertino_icons: ^2.0.0
   flutter:
     sdk: flutter
   flutter_secure_storage: ^11.2.0
@@ -24,6 +27,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
+    - assets/bechi-flix.webp
     - assets/fixtures/native-aac.mp4
     - assets/fixtures/native-ac3.mkv
     - assets/fixtures/native-hevc-eac3.mkv

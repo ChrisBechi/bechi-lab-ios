@@ -157,6 +157,11 @@ void main() {
                     (player.state.audioParams.sampleRate ?? 0) > 0,
           );
           expect(key.currentState!.error, isNull);
+          await until(tester, () {
+            final displaySize = binding.platformDispatcher.implicitView!.physicalSize;
+            return displaySize.width > displaySize.height;
+          });
+          outcome['player_landscape'] = true;
           expect(player.state.height, 180);
           expect(
             player.state.tracks.audio.where(
@@ -284,11 +289,19 @@ void main() {
             'engine': 'native libmpv',
             'first_frame_ms': key.currentState!.firstFrameMs,
           });
-          final leaving = key.currentState!.leave();
+          if (!key.currentState!.controls) {
+            await tester.tap(find.byKey(const Key('native-video')));
+            await tester.pump();
+          }
+          await tester.tap(find.byKey(const Key('player-back')));
           await until(tester, () => key.currentState == null);
-          await leaving;
           await tester.pumpAndSettle();
           expect(find.text('Abrir teste'), findsOneWidget);
+          await until(tester, () {
+            final displaySize = binding.platformDispatcher.implicitView!.physicalSize;
+            return displaySize.height > displaySize.width;
+          });
+          outcome['catalog_portrait'] = true;
           outcome['passed'] = true;
         } finally {
           if (outcome['passed'] != true) {

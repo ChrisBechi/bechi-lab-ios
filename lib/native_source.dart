@@ -98,7 +98,7 @@ class NativeSourceSession {
           'live/resolve',
           method: 'POST',
           body: {
-            'kind': 'channel',
+            'kind': source.isEvent ? 'event' : 'channel',
             'id': source.liveId,
             'source_index': 0,
             'relay': true,
