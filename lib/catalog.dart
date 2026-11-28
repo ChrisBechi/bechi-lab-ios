@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'bechi_api.dart';
+import 'ios_catalog_tabs.dart';
 import 'player_view.dart';
 import 'source_case.dart';
 part 'title_details.dart';
@@ -24,9 +25,11 @@ class AdaptivePage extends StatelessWidget {
     required this.body,
     this.action,
     this.bottom,
+    this.overlayBottom = false,
   });
   final Widget title, body;
   final Widget? action, bottom;
+  final bool overlayBottom;
   @override
   Widget build(BuildContext context) {
     if (apple(context)) {
@@ -36,12 +39,20 @@ class AdaptivePage extends StatelessWidget {
           bottom: bottom == null,
           child: Material(
             color: Colors.transparent,
-            child: Column(
-              children: [
-                Expanded(child: body),
-                ?bottom,
-              ],
-            ),
+            child: overlayBottom
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      body,
+                      Positioned(left: 0, right: 0, bottom: 0, child: bottom!),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      Expanded(child: body),
+                      ?bottom,
+                    ],
+                  ),
           ),
         ),
       );
@@ -89,6 +100,19 @@ class CatalogHome extends StatefulWidget {
 }
 
 class _CatalogHomeState extends State<CatalogHome> {
+  bool nativeTabs = false;
+  bool checkedTabs = false;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!checkedTabs && apple(context)) {
+      checkedTabs = true;
+      IosCatalogTabs.available().then((supported) {
+        if (mounted && supported) setState(() => nativeTabs = true);
+      });
+    }
+  }
+
   int tab = 0;
   final visited = <int>{0};
   final views = List.generate(5, (_) => GlobalKey<_FeedState>());
@@ -129,6 +153,8 @@ class _CatalogHomeState extends State<CatalogHome> {
       ),
     );
     final wide = MediaQuery.sizeOf(context).width >= 700;
+    final glass = apple(context) && nativeTabs;
+    final inset = glass ? 74.0 + MediaQuery.viewPaddingOf(context).bottom : 0.0;
     final content = IndexedStack(
       index: tab,
       children: List.generate(
@@ -138,12 +164,22 @@ class _CatalogHomeState extends State<CatalogHome> {
                 key: views[i],
                 api: widget.api,
                 index: i,
+                bottomInset: inset,
                 onChange: refreshPersonal,
               )
             : const SizedBox.shrink(),
       ),
     );
-    final bottom = apple(context)
+    final bottom = glass
+        ? SizedBox(
+            height: inset,
+            child: IosCatalogTabs(
+              index: tab,
+              labels: names,
+              onSelected: select,
+            ),
+          )
+        : apple(context)
         ? CupertinoTabBar(items: items, currentIndex: tab, onTap: select)
         : NavigationBar(
             selectedIndex: tab,
@@ -179,6 +215,7 @@ class _CatalogHomeState extends State<CatalogHome> {
         ],
       ),
       bottom: wide && !apple(context) ? null : bottom,
+      overlayBottom: glass,
       body: wide && !apple(context)
           ? Row(
               children: [
@@ -270,10 +307,12 @@ class Feed extends StatefulWidget {
     required this.index,
     required this.onChange,
     this.query = '',
+    this.bottomInset = 0,
   });
   final BechiApi api;
   final int index;
   final String query;
+  final double bottomInset;
   final VoidCallback onChange;
   @override
   State<Feed> createState() => _FeedState();
@@ -405,6 +444,9 @@ class _FeedState extends State<Feed> {
         final hero = jsonRows(data['hero']).firstOrNull;
         final rails = jsonRows(data['rails']);
         return ListView.builder(
+          padding: widget.bottomInset == 0
+              ? null
+              : EdgeInsets.only(bottom: widget.bottomInset),
           itemCount: rails.length + 1,
           itemBuilder: (context, i) {
             if (i == 0) {
@@ -476,7 +518,13 @@ class _FeedState extends State<Feed> {
           },
         );
       }
-      if (widget.index == 3) return LiveGuide(api: widget.api, data: data);
+      if (widget.index == 3) {
+        return LiveGuide(
+          api: widget.api,
+          data: data,
+          bottomInset: widget.bottomInset,
+        );
+      }
       final items = [
         ...jsonRows(widget.index == 4 ? snap.data : data['items']),
         ...extra,
@@ -515,6 +563,8 @@ class _FeedState extends State<Feed> {
                 ),
               ),
             ),
+          if (widget.bottomInset > 0)
+            SliverToBoxAdapter(child: SizedBox(height: widget.bottomInset)),
         ],
       );
     },

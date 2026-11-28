@@ -7,6 +7,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:bechi_player_prototype/bechi_api.dart';
 import 'package:bechi_player_prototype/player_view.dart';
+import 'package:bechi_player_prototype/ios_catalog_tabs.dart';
 import 'package:bechi_player_prototype/source_case.dart';
 import 'package:bechi_player_prototype/native_engine.dart'
     show selectNativeSubtitle;
@@ -70,6 +71,54 @@ void main() {
   MediaKit.ensureInitialized();
   final diagnosticRunId = DateTime.now().microsecondsSinceEpoch.toString();
   debugPrint('NATIVE_CODEC_BEGIN $diagnosticRunId');
+  if (Platform.isIOS && simulatorDecoderOnly) {
+    testWidgets(
+      'iOS 26 mounts, synchronizes and removes the UIKit tab controller',
+      (tester) async {
+        const labels = ['Início', 'Filmes', 'Séries', 'Ao vivo', 'Minha lista'];
+        expect(await IosCatalogTabs.available(), isTrue);
+        final index = ValueNotifier<int>(0);
+        addTearDown(index.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              bottomNavigationBar: SizedBox(
+                height: 110,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: index,
+                  builder: (_, selected, _) => IosCatalogTabs(
+                    index: selected,
+                    labels: labels,
+                    onSelected: (value) => index.value = value,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        Future<Map<String, dynamic>?> waitForNativeIndex(int? expected) async {
+          Map<String, dynamic>? state;
+          final untilTime = DateTime.now().add(const Duration(seconds: 12));
+          do {
+            await tester.pump(const Duration(milliseconds: 100));
+            state = await simulatorTestChannel.invokeMapMethod<String, dynamic>(
+              'catalogTabs',
+            );
+            if (state?['index'] == expected) return state;
+          } while (DateTime.now().isBefore(untilTime));
+          fail('Expected native tab $expected, got $state');
+        }
+
+        final initial = await waitForNativeIndex(0);
+        expect(initial?['labels'], labels);
+        expect(initial?['height'], greaterThan(0));
+        index.value = 3;
+        await waitForNativeIndex(3);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await waitForNativeIndex(null);
+      },
+    );
+  }
   testWidgets('Keychain writes, restores and deletes the native session', (
     tester,
   ) async {
@@ -158,7 +207,8 @@ void main() {
           );
           expect(key.currentState!.error, isNull);
           await until(tester, () {
-            final displaySize = binding.platformDispatcher.implicitView!.physicalSize;
+            final displaySize =
+                binding.platformDispatcher.implicitView!.physicalSize;
             return displaySize.width > displaySize.height;
           });
           outcome['player_landscape'] = true;
@@ -298,7 +348,8 @@ void main() {
           await tester.pumpAndSettle();
           expect(find.text('Abrir teste'), findsOneWidget);
           await until(tester, () {
-            final displaySize = binding.platformDispatcher.implicitView!.physicalSize;
+            final displaySize =
+                binding.platformDispatcher.implicitView!.physicalSize;
             return displaySize.height > displaySize.width;
           });
           outcome['catalog_portrait'] = true;

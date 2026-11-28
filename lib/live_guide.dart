@@ -1,7 +1,13 @@
 part of 'catalog.dart';
 
 class LiveGuide extends StatelessWidget {
-  const LiveGuide({super.key, required this.data, required this.api});
+  const LiveGuide({
+    super.key,
+    required this.data,
+    required this.api,
+    this.bottomInset = 0,
+  });
+  final double bottomInset;
   final Item data;
   final BechiApi api;
   @override
@@ -21,6 +27,7 @@ class LiveGuide extends StatelessWidget {
     }
     final groupsList = groups.values.toList();
     return ListView.builder(
+      padding: bottomInset == 0 ? null : EdgeInsets.only(bottom: bottomInset),
       itemCount: groupsList.length + events.length,
       itemBuilder: (context, i) {
         if (i < events.length) {

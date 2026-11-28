@@ -18,6 +18,9 @@ import AVFAudio
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BechiCatalogTabs") {
+      CatalogTabs.register(with: registrar)
+    }
     #if targetEnvironment(simulator)
     // Runtime-only simulator identity. No QA token or test channel is compiled
     // into device builds; Dart's environment map is empty on this iOS runner.
@@ -25,6 +28,21 @@ import AVFAudio
       let channel = FlutterMethodChannel(name: "app.bechiflix.native/test", binaryMessenger: registrar.messenger())
       testChannel = channel
       channel.setMethodCallHandler { call, result in
+        if call.method == "catalogTabs" {
+          let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }.first { $0.isKeyWindow }
+          var queue = window?.rootViewController.map { [$0] } ?? []
+          while let controller = queue.popLast() {
+            if let tabs = controller as? UITabBarController, tabs.tabBar.window != nil {
+              result(["index": tabs.selectedIndex, "labels": tabs.tabBar.items?.compactMap { $0.title } ?? [],
+                      "height": tabs.tabBar.bounds.height])
+              return
+            }
+            queue.append(contentsOf: controller.children)
+          }
+          result(nil)
+          return
+        }
         guard call.method == "context" else { result(FlutterMethodNotImplemented); return }
         result(["simulator": true, "qa_session": ProcessInfo.processInfo.environment["BECHI_QA_TOKEN"] ?? ""])
       }
