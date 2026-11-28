@@ -29,6 +29,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(find.text(long)).maxLines, isNull);
       await tester.ensureVisible(find.text('Ver menos…'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Ver menos…'));
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(find.text(long)).maxLines, 4);
