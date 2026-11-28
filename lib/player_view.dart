@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -60,7 +61,26 @@ class NativePlayerPage extends StatefulWidget {
   State<NativePlayerPage> createState() => NativePlayerPageState();
 }
 
-class NativePlayerPageState extends State<NativePlayerPage> {
+class NativePlayerPageState extends State<NativePlayerPage>
+    with WidgetsBindingObserver {
+  static const _chrome = MethodChannel('app.bechiflix.native/player-chrome');
+  Future<void> _setFullscreen(bool active) async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _chrome.invokeMethod<void>('fullscreen', active);
+    } else {
+      await SystemChrome.setEnabledSystemUIMode(
+        active ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge,
+      );
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !closing) {
+      unawaited(_setFullscreen(true));
+    }
+  }
+
   late final Player player =
       widget.player ??
       Player(
@@ -98,6 +118,10 @@ class NativePlayerPageState extends State<NativePlayerPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !closing) unawaited(_setFullscreen(true));
+    });
     unawaited(
       SystemChrome.setPreferredOrientations(const [
         DeviceOrientation.landscapeLeft,
@@ -299,6 +323,8 @@ class NativePlayerPageState extends State<NativePlayerPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_setFullscreen(false));
     unawaited(
       SystemChrome.setPreferredOrientations(const [
         DeviceOrientation.portraitUp,

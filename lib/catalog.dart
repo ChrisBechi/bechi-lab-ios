@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'bechi_api.dart';
 import 'ios_catalog_tabs.dart';
+import 'expandable_synopsis.dart';
 import 'player_view.dart';
 import 'source_case.dart';
 part 'title_details.dart';
@@ -326,7 +327,7 @@ class _FeedState extends State<Feed> {
   String? pageError;
   int generation = 0;
   String get path => [
-    'home',
+    'home?rankings=1',
     'titles?kind=movie&limit=42',
     'titles?kind=series&limit=42',
     'live/catalog',
@@ -401,9 +402,36 @@ class _FeedState extends State<Feed> {
   }
 
   Future<void> open(Item t) async {
-    if (t['slug'] == null) return;
-    await showPage(context, TitleDetails(api: widget.api, summary: t));
-    if (mounted) widget.onChange();
+    if (t['slug'] == null ||
+        t['slug'] == '' ||
+        jsonMap(t['ranking'])['available'] == false) {
+      await showAdaptiveDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog.adaptive(
+          title: Text(t['name'] ?? 'Em alta'),
+          content: const Text(
+            'Este título ainda não está disponível no catálogo.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Fechar'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    var changed = false;
+    await showPage(
+      context,
+      TitleDetails(
+        api: widget.api,
+        summary: t,
+        onLibraryChange: () => changed = true,
+      ),
+    );
+    if (mounted && changed) widget.onChange();
   }
 
   Widget poster(Item t) => Semantics(
@@ -418,7 +446,40 @@ class _FeedState extends State<Feed> {
             child: SizedBox.expand(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Art(t['poster'] ?? t['rail_cover']),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Art(
+                      t['poster'] ??
+                          t['rail_cover'] ??
+                          jsonMap(t['ranking'])['artwork'],
+                    ),
+                    if (jsonMap(t['ranking'])['position'] case final num rank)
+                      Positioned(
+                        left: 4,
+                        bottom: 4,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.black87,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            child: Text(
+                              '#$rank',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

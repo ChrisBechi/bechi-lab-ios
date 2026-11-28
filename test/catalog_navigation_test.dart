@@ -19,10 +19,23 @@ class CatalogApi extends BechiApi {
     Map<String, dynamic>? body,
     CancelScope? scope,
   }) async {
-    if (path == 'home') {
+    if (path == 'home?rankings=1') {
       return {
         'hero': [title],
-        'rails': [],
+        'rails': [
+          {
+            'id': 'ranking-netflix',
+            'name': 'Em alta na Netflix',
+            'items': [
+              {
+                'id': 'ranking-test',
+                'slug': '',
+                'name': 'Um lançamento',
+                'ranking': {'position': 1, 'available': false},
+              },
+            ],
+          },
+        ],
       };
     }
     if (path == 'me/library') return {'continue_watching': []};
@@ -88,6 +101,8 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(find.text('Em alta na Netflix'), findsOneWidget);
+      expect(find.text('#1'), findsOneWidget);
       await tester.tap(find.text('Uma série'));
       await tester.pumpAndSettle();
       expect(find.text('Assistir T1 EP1'), findsOneWidget);

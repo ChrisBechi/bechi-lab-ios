@@ -1,7 +1,13 @@
 part of 'catalog.dart';
 
 class TitleDetails extends StatefulWidget {
-  const TitleDetails({super.key, required this.api, required this.summary});
+  const TitleDetails({
+    super.key,
+    required this.api,
+    required this.summary,
+    this.onLibraryChange,
+  });
+  final VoidCallback? onLibraryChange;
   final BechiApi api;
   final Item summary;
   @override
@@ -96,6 +102,7 @@ class _TitleDetailsState extends State<TitleDetails> {
           favorite = !favorite!;
           notice = null;
         });
+        widget.onLibraryChange?.call();
       }
     } catch (_) {
       if (mounted) {
@@ -137,6 +144,7 @@ class _TitleDetailsState extends State<TitleDetails> {
         ),
       ),
     );
+    if (mounted) widget.onLibraryChange?.call();
   }
 
   Future<void> choose(
@@ -216,12 +224,11 @@ class _TitleDetailsState extends State<TitleDetails> {
                       child: Art(ep['thumbnail_url']),
                     ),
                     title: Text('EP ${ep['episode_number']} · ${ep['name']}'),
-                    subtitle: ep['synopsis_short'] == null
+                    subtitle: (ep['synopsis'] ?? ep['synopsis_short']) == null
                         ? null
-                        : Text(
-                            ep['synopsis_short'],
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
+                        : ExpandableSynopsis(
+                            ep['synopsis'] ?? ep['synopsis_short'],
+                            collapsedLines: 2,
                           ),
                     trailing: const Icon(Icons.play_arrow),
                     onTap: () {
@@ -265,7 +272,7 @@ class _TitleDetailsState extends State<TitleDetails> {
                             ].whereType<Object>().join(' · '),
                           ),
                           const SizedBox(height: 12),
-                          Text(
+                          ExpandableSynopsis(
                             title['synopsis'] ?? title['synopsis_short'] ?? '',
                           ),
                           const SizedBox(height: 16),
